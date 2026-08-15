@@ -7,6 +7,7 @@ import {
 import { storage, DocumentProgress, Theme, Bookmark } from '../lib/storage';
 import { formatRSVPWord, RSVPWord } from '../lib/rsvp';
 import { computeParagraphs, ParagraphData } from '../lib/paragraph';
+import { tokenize } from '../lib/parser';
 import ParagraphSplitView from './ParagraphSplitView';
 import { cn } from '../lib/utils';
 
@@ -152,8 +153,15 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
       await storage.recordRecentlyRead(documentId);
 
       const docWords = await storage.getDocumentWords(documentId);
-      const totalWordsCount = docWords ? docWords.length : 0;
-      if (docWords) setWords(docWords);
+      let cleanWords: string[] = [];
+      if (docWords && docWords.length > 0) {
+        cleanWords = docWords.flatMap(w => tokenize(w));
+        setWords(cleanWords);
+        if (cleanWords.length !== docWords.length) {
+          storage.updateDocumentWords(documentId, cleanWords).catch(() => {});
+        }
+      }
+      const totalWordsCount = cleanWords.length;
       
       const docProgress = await storage.getDocumentProgress(documentId);
       const savedIndex = docProgress.currentWordIndex || 0;
@@ -652,20 +660,64 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
       {/* Top Bar */}
       <div 
         className={cn(
-          "flex flex-wrap items-center justify-between p-4 sm:p-6 gap-y-4 transition-opacity duration-300",
+          "flex flex-col sm:flex-row items-center justify-between p-3 sm:p-5 gap-3 transition-opacity duration-300 w-full select-none",
           isPlaying ? "opacity-0 pointer-events-none" : "opacity-100"
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <button 
-          onClick={handleBack}
-          className="flex items-center gap-2 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] transition-all px-3 py-2 rounded-[11px] cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="font-semibold text-xs sm:text-sm hidden sm:inline">Biblioteca</span>
-        </button>
+        {/* Left / Back Button */}
+        <div className="flex items-center justify-between w-full sm:w-auto shrink-0">
+          <button 
+            onClick={handleBack}
+            className="flex items-center gap-2 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] transition-all px-3 py-2 rounded-[11px] cursor-pointer shrink-0 whitespace-nowrap"
+          >
+            <ArrowLeft className="w-4 h-4 shrink-0" />
+            <span className="font-semibold text-xs sm:text-sm">Biblioteca</span>
+          </button>
+
+          {/* Mobile-only Tools row trigger when screen is extra small */}
+          <div className="flex sm:hidden items-center gap-1.5 shrink-0">
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleCurrentBookmark(); }}
+              className={cn(
+                "p-2 rounded-[11px] border transition-all cursor-pointer shrink-0",
+                isCurrentWordBookmarked
+                  ? "bg-[#514a19] text-[#FCFD76] border-[#FCFD76]/60 shadow-[0_0_12px_rgba(252,253,118,0.2)]"
+                  : "text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border-[#33333c]"
+              )}
+              title={isCurrentWordBookmarked ? "Remover marcador (B)" : "Marcar palavra (B)"}
+            >
+              {isCurrentWordBookmarked ? <BookmarkCheck className="w-4 h-4 text-[#FCFD76]" /> : <BookmarkIcon className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleSplitView(); }}
+              className={cn(
+                "p-2 rounded-[11px] border transition-all cursor-pointer shrink-0",
+                showSplitView ? "bg-[#2a2a36] text-[#FCFD76] border-[#404050]" : "text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border-[#33333c]"
+              )}
+              title="Split View (V)"
+            >
+              <Columns2 className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={openSettings}
+              className="p-2 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] rounded-[11px] transition-all cursor-pointer shrink-0"
+              title="Configurações"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={openNav}
+              className="p-2 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] rounded-[11px] transition-all cursor-pointer shrink-0"
+              title="Navegação"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
         
-        <div className="flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-1.5 rounded-[30px] border border-[#33333c] bg-[#222228] order-3 w-full sm:w-auto sm:order-none justify-center">
+        {/* Center: WPM Speed Control */}
+        <div className="flex items-center gap-2 sm:gap-2.5 px-3.5 sm:px-4 py-1.5 rounded-[30px] border border-[#33333c] bg-[#222228] w-full sm:w-auto justify-center shrink-0">
           <button 
             onClick={(e) => { e.stopPropagation(); updateWpm(-25); }} 
             className="p-1 text-[#9a9aa3] hover:text-[#e8e8ec] transition-colors cursor-pointer shrink-0" 
@@ -674,12 +726,12 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
             <Minus className="w-4 h-4" />
           </button>
           
-          <div className="flex items-center gap-1.5 font-mono font-bold text-sm sm:text-base text-[#e8e8ec] shrink-0">
-            <span className="min-w-[3ch] text-right">{progress.wpm}</span>
-            <span className="text-xs text-[#9a9aa3] font-sans font-medium">WPM</span>
+          <div className="flex items-center gap-1 font-mono font-bold text-sm sm:text-base text-[#e8e8ec] shrink-0">
+            <span className="min-w-[3.2ch] text-right">{progress.wpm}</span>
+            <span className="text-[11px] sm:text-xs text-[#9a9aa3] font-sans font-medium">WPM</span>
             {autoSpeedAdjustment && (
               <span 
-                className="ml-0.5 text-[9px] uppercase font-extrabold tracking-wider px-1.5 py-0.5 rounded-[30px] bg-[#35325f] text-[#c5c5ef] hidden md:inline-flex items-center gap-0.5"
+                className="ml-0.5 text-[9px] uppercase font-extrabold tracking-wider px-1.5 py-0.5 rounded-[30px] bg-[#35325f] text-[#c5c5ef] hidden lg:inline-flex items-center gap-0.5"
                 title="Ritmo adaptativo ativo: ajusta velocidade conforme foco e pausas"
               >
                 <Zap className="w-2.5 h-2.5 fill-current" />
@@ -701,7 +753,7 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
                 setWpmDirectly(Number(e.target.value));
               }}
               onClick={(e) => e.stopPropagation()}
-              className="w-20 xs:w-24 sm:w-28 md:w-36 accent-[#FCFD76] cursor-pointer h-1.5 bg-[#3a3a44] rounded-lg appearance-none"
+              className="w-20 xs:w-28 sm:w-28 md:w-36 accent-[#FCFD76] cursor-pointer h-1.5 bg-[#3a3a44] rounded-lg appearance-none"
               title={`Velocidade de leitura: ${progress.wpm} WPM`}
             />
           </div>
@@ -715,12 +767,13 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Right Tools Cluster (Tablet & Desktop) */}
+        <div className="hidden sm:flex items-center gap-1.5 sm:gap-2 shrink-0 flex-nowrap">
           {/* Bookmark Button */}
           <button
             onClick={(e) => { e.stopPropagation(); toggleCurrentBookmark(); }}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-2 rounded-[11px] border transition-all cursor-pointer",
+              "flex items-center justify-center gap-1.5 px-3 py-2 rounded-[11px] border transition-all cursor-pointer shrink-0 whitespace-nowrap",
               isCurrentWordBookmarked
                 ? "bg-[#514a19] text-[#FCFD76] border-[#FCFD76]/60 shadow-[0_0_12px_rgba(252,253,118,0.2)]"
                 : "text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border-[#33333c]"
@@ -728,16 +781,16 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
             title={isCurrentWordBookmarked ? "Remover marcador desta palavra (Atalho: B)" : "Adicionar marcador nesta palavra (Atalho: B)"}
           >
             {isCurrentWordBookmarked ? (
-              <BookmarkCheck className="w-4 h-4 text-[#FCFD76]" />
+              <BookmarkCheck className="w-4 h-4 text-[#FCFD76] shrink-0" />
             ) : (
-              <BookmarkIcon className="w-4 h-4" />
+              <BookmarkIcon className="w-4 h-4 shrink-0" />
             )}
-            <span className="font-semibold text-xs sm:text-sm hidden sm:inline">
+            <span className="font-semibold text-xs sm:text-sm inline-block text-center w-[54px]">
               {isCurrentWordBookmarked ? "Marcado" : "Marcar"}
             </span>
             {bookmarks.length > 0 && (
               <span className={cn(
-                "text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full ml-0.5",
+                "text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full shrink-0",
                 isCurrentWordBookmarked ? "bg-[#FCFD76] text-[#212121]" : "bg-[#35325f] text-[#c5c5ef]"
               )}>
                 {bookmarks.length}
@@ -745,36 +798,40 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
             )}
           </button>
 
+          {/* Split View Toggle Button */}
           <button
             onClick={(e) => { e.stopPropagation(); toggleSplitView(); }}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-2 rounded-[11px] border transition-all cursor-pointer",
+              "flex items-center gap-1.5 px-3 py-2 rounded-[11px] border transition-all cursor-pointer shrink-0 whitespace-nowrap",
               showSplitView
                 ? "bg-[#2a2a36] text-[#FCFD76] border-[#404050]"
                 : "text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border-[#33333c]"
             )}
             title="Alternar Visão Dividida de Parágrafo (Atalho: V)"
           >
-            <Columns2 className="w-4 h-4" />
-            <span className="font-semibold text-xs sm:text-sm hidden sm:inline">
+            <Columns2 className="w-4 h-4 shrink-0" />
+            <span className="font-semibold text-xs sm:text-sm">
               Split
             </span>
           </button>
 
+          {/* Settings Button */}
           <button 
             onClick={openSettings}
-            className="p-2.5 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] rounded-[11px] transition-all cursor-pointer"
+            className="p-2 sm:p-2.5 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] rounded-[11px] transition-all cursor-pointer shrink-0"
             title="Configurações de Leitura"
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-4 h-4 shrink-0" />
           </button>
+
+          {/* Navigation Button */}
           <button 
             onClick={openNav}
-            className="flex items-center gap-2 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] px-3 py-2 rounded-[11px] transition-all cursor-pointer"
+            className="flex items-center gap-1.5 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] px-3 py-2 rounded-[11px] transition-all cursor-pointer shrink-0 whitespace-nowrap"
             title="Navegar no texto e marcadores"
           >
-            <span className="font-semibold text-xs sm:text-sm hidden sm:inline">Navegar</span>
-            <List className="w-4 h-4" />
+            <span className="font-semibold text-xs sm:text-sm">Navegar</span>
+            <List className="w-4 h-4 shrink-0" />
           </button>
         </div>
       </div>

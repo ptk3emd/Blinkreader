@@ -203,6 +203,16 @@ export const storage = {
     return safeGet<string[] | null>(`doc_words_${id}`, null);
   },
 
+  async updateDocumentWords(id: string, words: string[]): Promise<void> {
+    await safeSet(`doc_words_${id}`, words);
+    const docs = await this.getDocuments();
+    const doc = docs.find(d => d.id === id);
+    if (doc && doc.totalWords !== words.length) {
+      doc.totalWords = words.length;
+      await safeSet('documents', docs);
+    }
+  },
+
   async getDocumentProgress(id: string): Promise<DocumentProgress> {
     return safeGet<DocumentProgress>(`doc_progress_${id}`, { currentWordIndex: 0, wpm: 300 });
   },

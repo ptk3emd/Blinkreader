@@ -1,7 +1,40 @@
-function tokenize(text: string): string[] {
-  // Replace newlines with spaces, remove multiple spaces, then split
-  const cleanText = text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-  // We want to keep punctuation attached to words
+export function preprocessText(text: string): string {
+  if (!text) return '';
+
+  let processed = text;
+
+  // Normalize non-breaking spaces and irregular unicode whitespaces
+  processed = processed.replace(/[\u00A0\u1680\u180e\u2000-\u200a\u202f\u205f\u3000\uFEFF]/g, ' ');
+
+  // Normalize various dashes (em-dash, en-dash, figure dash) when between words
+  // e.g. "palavra—outra" -> "palavra — outra"
+  processed = processed.replace(/([a-zA-ZÀ-ÿ0-9])([—–―])([a-zA-ZÀ-ÿ0-9])/g, '$1 $2 $3');
+
+  // Handle ellipsis attached directly to words: e.g. "espera...agora" -> "espera... agora"
+  processed = processed.replace(/(\.{2,}|…)([a-zA-ZÀ-ÿ0-9"'(«])/g, '$1 $2');
+
+  // Split punctuation attached to letters without space:
+  // e.g., "palavra.segunda", "palavra?segunda", "palavra!segunda", "palavra:segunda", "palavra;segunda", "palavra,segunda"
+  // Match letter + punctuation + optional closing quotes/parens followed directly by a letter, digit or quote
+  processed = processed.replace(/([a-zA-ZÀ-ÿ][.!?…:;,]["'”’»\)\]]*)(?=[a-zA-ZÀ-ÿ0-9"'(«])/g, '$1 ');
+
+  // Split letter + closing bracket/quote followed directly by a letter/quote:
+  // e.g., "(exemplo)texto" -> "(exemplo) texto", "fim"Começo -> "fim" Começo
+  processed = processed.replace(/([a-zA-ZÀ-ÿ0-9][\)\]"'”’»]+)(?=[a-zA-ZÀ-ÿ0-9"'(«])/g, '$1 ');
+
+  // Split word followed directly by opening quote/bracket:
+  // e.g. "palavra(texto)" -> "palavra (texto)"
+  processed = processed.replace(/([a-zA-ZÀ-ÿ0-9])([«"'\(\[])/g, '$1 $2');
+
+  return processed;
+}
+
+export function tokenize(text: string): string[] {
+  if (!text) return [];
+  const cleanText = preprocessText(text)
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   return cleanText.split(' ').filter(w => w.length > 0);
 }
 
