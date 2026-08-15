@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   ArrowLeft, Play, Pause, List, ChevronLeft, ChevronRight, 
   Minus, Plus, X, Settings, Zap, Bookmark as BookmarkIcon, 
-  BookmarkCheck, BookmarkPlus, Trash2, RotateCcw 
+  BookmarkCheck, BookmarkPlus, Trash2, RotateCcw, Columns2 
 } from 'lucide-react';
 import { storage, DocumentProgress, Theme, Bookmark } from '../lib/storage';
 import { formatRSVPWord, RSVPWord } from '../lib/rsvp';
+import { computeParagraphs, ParagraphData } from '../lib/paragraph';
+import ParagraphSplitView from './ParagraphSplitView';
 import { cn } from '../lib/utils';
 
 interface ReaderProps {
@@ -72,8 +74,14 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
   const [bookmarkToast, setBookmarkToast] = useState<{ message: string; id: number } | null>(null);
   const [resumeToast, setResumeToast] = useState<{ message: string; id: number } | null>(null);
   const [exactWordInput, setExactWordInput] = useState<string>('');
+  const [showSplitView, setShowSplitView] = useState<boolean>(false);
   const bookmarkToastTimeoutRef = useRef<number | null>(null);
   const resumeToastTimeoutRef = useRef<number | null>(null);
+
+  // Compute structured paragraphs for the active document
+  const paragraphs = useMemo<ParagraphData[]>(() => {
+    return computeParagraphs(words);
+  }, [words]);
 
   const triggerBookmarkToast = useCallback((message: string) => {
     if (bookmarkToastTimeoutRef.current) {
@@ -175,6 +183,9 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       if (userSettings.autoSpeedAdjustment !== undefined) {
         setAutoSpeedAdjustment(userSettings.autoSpeedAdjustment);
         autoSpeedAdjustmentRef.current = userSettings.autoSpeedAdjustment;
+      }
+      if (userSettings.showSplitParagraphView !== undefined) {
+        setShowSplitView(userSettings.showSplitParagraphView);
       }
 
       const docBookmarks = await storage.getBookmarks(documentId);
@@ -515,6 +526,21 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     }
   };
 
+  const toggleSplitView = useCallback((nextState?: boolean) => {
+    setShowSplitView(curr => {
+      const next = typeof nextState === 'boolean' ? nextState : !curr;
+      storage.updateSettings({ showSplitParagraphView: next });
+      return next;
+    });
+  }, []);
+
+  const jumpToExactWord = useCallback((index: number) => {
+    const boundedIndex = Math.max(0, Math.min(words.length - 1, index));
+    currentWordIndexRef.current = boundedIndex;
+    setProgress(p => ({ ...p, currentWordIndex: boundedIndex }));
+    saveProgress();
+  }, [words, saveProgress]);
+
   const openSettings = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsPlaying(false);
@@ -548,12 +574,15 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       } else if (e.code === 'KeyB' || e.key === 'b' || e.key === 'B') {
         e.preventDefault();
         toggleCurrentBookmark();
+      } else if (e.code === 'KeyV' || e.key === 'v' || e.key === 'V') {
+        e.preventDefault();
+        toggleSplitView();
       }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, toggleCurrentBookmark]);
+  }, [isPlaying, toggleCurrentBookmark, toggleSplitView]);
 
   if (loading) {
     return <div className="flex h-screen items-center justify-center text-zinc-500">Loading document...</div>;
@@ -710,6 +739,22 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
             )}
           </button>
 
+          <button
+            onClick={(e) => { e.stopPropagation(); toggleSplitView(); }}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2 rounded-[11px] border transition-all cursor-pointer",
+              showSplitView
+                ? "bg-[#35325f] text-[#c5c5ef] border-[#504a8a] shadow-[0_0_12px_rgba(80,74,138,0.3)]"
+                : "text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border-[#33333c]"
+            )}
+            title="Alternar Visão Dividida de Parágrafo (Atalho: V)"
+          >
+            <Columns2 className="w-4 h-4" />
+            <span className="font-semibold text-xs sm:text-sm hidden sm:inline">
+              {showSplitView ? "Split Ativo" : "Split"}
+            </span>
+          </button>
+
           <button 
             onClick={openSettings}
             className="p-2.5 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] rounded-[11px] transition-all cursor-pointer"
@@ -729,48 +774,112 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       </div>
 
       {/* Main Reader Area */}
-      <div className="flex-1 flex flex-col items-center justify-center relative px-4">
+      {showSplitView ? (
+        <div className="flex-1 flex flex-col md:flex-row items-stretch justify-center relative px-3 sm:px-6 py-2 gap-3 sm:gap-5 overflow-hidden min-h-0">
+          {/* Left / Top Pane: RSVP Dynamic Reader Stage */}
+          <div 
+            className="flex-1 flex flex-col items-center justify-center relative p-4 sm:p-8 bg-[#18181c]/80 border border-[#33333c] rounded-[20px] overflow-hidden shadow-inner cursor-pointer"
+            onClick={togglePlay}
+          >
+            <div 
+              className="flex flex-col items-center justify-center w-full transition-transform duration-200 origin-center select-none"
+              style={{ transform: `scale(${Math.max(70, fontSize * 0.9) / 100})` }}
+            >
+              {/* Previous Word */}
+              {showContextWords && (
+                <div className="font-mono text-xs sm:text-base md:text-xl opacity-25 h-6 sm:h-8 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none text-[#c2c2c9]">
+                  {previousWordText || <span className="opacity-0">—</span>}
+                </div>
+              )}
 
-        {/* Word Display with Context Words */}
-        <div 
-          className="flex flex-col items-center justify-center w-full transition-transform duration-200 origin-center select-none"
-          style={{ transform: `scale(${fontSize / 100})` }}
-        >
-          {/* Previous Word (Larger font, lower opacity) */}
-          {showContextWords && (
-            <div className="font-mono text-sm sm:text-xl md:text-2xl lg:text-3xl opacity-20 h-8 sm:h-10 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none text-[#c2c2c9]">
-              {previousWordText || <span className="opacity-0">—</span>}
-            </div>
-          )}
+              {/* Current RSVP Word */}
+              <div className="flex items-baseline font-mono text-[9vw] md:text-5xl lg:text-6xl xl:text-7xl w-full my-3 sm:my-5">
+                {/* Prefix (right-aligned) */}
+                <div className="flex-1 text-right text-[#e8e8ec] opacity-85">
+                  {formattedWord.prefix}
+                </div>
+                {/* ORP (highlighted in highlighter yellow or theme accent) */}
+                <div className={cn("font-extrabold relative shrink-0", themeAccents[theme])}>
+                  {/* Crosshair indicator lines */}
+                  <div className="absolute -top-3.5 sm:-top-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-60 rounded-full pointer-events-none"></div>
+                  <div className="absolute -bottom-3.5 sm:-bottom-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-60 rounded-full pointer-events-none"></div>
+                  
+                  {formattedWord.orp}
+                </div>
+                {/* Suffix (left-aligned) */}
+                <div className="flex-1 text-left text-[#e8e8ec] opacity-85">
+                  {formattedWord.suffix}
+                </div>
+              </div>
 
-          {/* Current RSVP Word */}
-          <div className="flex items-baseline font-mono text-[8vw] md:text-7xl lg:text-8xl w-full my-4 sm:my-6">
-            {/* Prefix (right-aligned) */}
-            <div className="flex-1 text-right text-[#e8e8ec] opacity-85">
-              {formattedWord.prefix}
+              {/* Next Word */}
+              {showContextWords && (
+                <div className="font-mono text-xs sm:text-base md:text-xl opacity-25 h-6 sm:h-8 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none text-[#c2c2c9]">
+                  {nextWordText || <span className="opacity-0">—</span>}
+                </div>
+              )}
             </div>
-            {/* ORP (highlighted in highlighter yellow or theme accent) */}
-            <div className={cn("font-extrabold relative shrink-0", themeAccents[theme])}>
-              {/* Crosshair indicator lines */}
-              <div className="absolute -top-3.5 sm:-top-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-60 rounded-full pointer-events-none"></div>
-              <div className="absolute -bottom-3.5 sm:-bottom-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-60 rounded-full pointer-events-none"></div>
-              
-              {formattedWord.orp}
-            </div>
-            {/* Suffix (left-aligned) */}
-            <div className="flex-1 text-left text-[#e8e8ec] opacity-85">
-              {formattedWord.suffix}
+
+            <div className="absolute bottom-2.5 right-3 text-[10px] font-mono text-[#9a9aa3]/70 hidden sm:block">
+              {isPlaying ? "Clique para pausar" : "Clique ou Espaço para ler"}
             </div>
           </div>
 
-          {/* Next Word (Larger font, lower opacity) */}
-          {showContextWords && (
-            <div className="font-mono text-sm sm:text-xl md:text-2xl lg:text-3xl opacity-20 h-8 sm:h-10 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none text-[#c2c2c9]">
-              {nextWordText || <span className="opacity-0">—</span>}
-            </div>
-          )}
+          {/* Right / Bottom Pane: Paragraph Split View */}
+          <div className="flex-1 flex flex-col h-[42vh] md:h-auto min-h-0 overflow-hidden">
+            <ParagraphSplitView
+              paragraphs={paragraphs}
+              currentWordIndex={progress.currentWordIndex}
+              theme={theme}
+              onWordClick={jumpToExactWord}
+              onClose={() => toggleSplitView(false)}
+              isPlaying={isPlaying}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex-1 flex flex-col items-center justify-center relative px-4">
+          {/* Word Display with Context Words */}
+          <div 
+            className="flex flex-col items-center justify-center w-full transition-transform duration-200 origin-center select-none"
+            style={{ transform: `scale(${fontSize / 100})` }}
+          >
+            {/* Previous Word (Larger font, lower opacity) */}
+            {showContextWords && (
+              <div className="font-mono text-sm sm:text-xl md:text-2xl lg:text-3xl opacity-20 h-8 sm:h-10 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none text-[#c2c2c9]">
+                {previousWordText || <span className="opacity-0">—</span>}
+              </div>
+            )}
+
+            {/* Current RSVP Word */}
+            <div className="flex items-baseline font-mono text-[8vw] md:text-7xl lg:text-8xl w-full my-4 sm:my-6">
+              {/* Prefix (right-aligned) */}
+              <div className="flex-1 text-right text-[#e8e8ec] opacity-85">
+                {formattedWord.prefix}
+              </div>
+              {/* ORP (highlighted in highlighter yellow or theme accent) */}
+              <div className={cn("font-extrabold relative shrink-0", themeAccents[theme])}>
+                {/* Crosshair indicator lines */}
+                <div className="absolute -top-3.5 sm:-top-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-60 rounded-full pointer-events-none"></div>
+                <div className="absolute -bottom-3.5 sm:-bottom-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-60 rounded-full pointer-events-none"></div>
+                
+                {formattedWord.orp}
+              </div>
+              {/* Suffix (left-aligned) */}
+              <div className="flex-1 text-left text-[#e8e8ec] opacity-85">
+                {formattedWord.suffix}
+              </div>
+            </div>
+
+            {/* Next Word (Larger font, lower opacity) */}
+            {showContextWords && (
+              <div className="font-mono text-sm sm:text-xl md:text-2xl lg:text-3xl opacity-20 h-8 sm:h-10 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none text-[#c2c2c9]">
+                {nextWordText || <span className="opacity-0">—</span>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Visual Progress Bar & Tracking Info */}
       <div 
@@ -1301,7 +1410,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
               </div>
 
               <h3 className="text-[11px] font-extrabold text-[#9a9aa3] uppercase tracking-[0.12em] mb-3">Velocidade Adaptativa (Auto WPM)</h3>
-              <div className="bg-[#18181c] border border-[#33333c] rounded-[14px] p-4 flex items-center justify-between">
+              <div className="bg-[#18181c] border border-[#33333c] rounded-[14px] p-4 flex items-center justify-between mb-6">
                 <div className="flex flex-col pr-4">
                   <div className="flex items-center gap-2">
                     <span className="text-[#e8e8ec] font-bold text-xs sm:text-sm">Ajuste Inteligente de Ritmo</span>
@@ -1322,6 +1431,32 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                     autoSpeedAdjustment ? "bg-[#35325f] justify-end" : "bg-[#3a3a44] justify-start"
                   )}
                   aria-label="Alternar ajuste de velocidade"
+                >
+                  <div className="bg-white w-4 h-4 rounded-full shadow-md" />
+                </button>
+              </div>
+
+              <h3 className="text-[11px] font-extrabold text-[#9a9aa3] uppercase tracking-[0.12em] mb-3">Visão Dividida (Split Parágrafo)</h3>
+              <div className="bg-[#18181c] border border-[#33333c] rounded-[14px] p-4 flex items-center justify-between">
+                <div className="flex flex-col pr-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#e8e8ec] font-bold text-xs sm:text-sm">Acompanhamento de Parágrafo</span>
+                    <span className="text-[9px] uppercase font-extrabold tracking-wider px-1.5 py-0.5 rounded-[30px] bg-[#35325f] text-[#c5c5ef]">
+                      Atalho: V
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-[#9a9aa3] mt-1">
+                    Exibe a visualização de leitura dinâmica lado a lado com o parágrafo completo e palavra ativa destacada.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleSplitView()}
+                  className={cn(
+                    "w-12 h-6 shrink-0 flex items-center rounded-[30px] p-1 transition-colors duration-200 cursor-pointer",
+                    showSplitView ? "bg-[#35325f] justify-end" : "bg-[#3a3a44] justify-start"
+                  )}
+                  aria-label="Alternar visão dividida de parágrafo"
                 >
                   <div className="bg-white w-4 h-4 rounded-full shadow-md" />
                 </button>

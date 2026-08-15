@@ -8,7 +8,7 @@ export default defineConfig(() => {
     base: './',
     plugins: [react(), tailwindcss()],
     define: {
-      global: 'window',
+      'global': 'globalThis',
       'process.env': {},
     },
     resolve: {

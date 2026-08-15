@@ -20,6 +20,7 @@ export interface UserSettings {
   fontSize: number; // Percentage, e.g., 100 for normal, 120 for 120%
   showContextWords?: boolean;
   autoSpeedAdjustment?: boolean; // Dynamically adjusts WPM based on focus streak and rewind/pause frequency
+  showSplitParagraphView?: boolean; // Side-by-side or stacked paragraph tracking split
 }
 
 export interface Bookmark {
