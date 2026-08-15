@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useMemo, ChangeEvent, MouseEvent } from 'react';
 import { 
   Upload, BookOpen, Trash2, FileText, File as FileIcon, 
-  Clock, TrendingUp, Search, X, Bookmark, Play, ChevronRight 
+  Clock, TrendingUp, Search, X, Bookmark, Play, ChevronRight,
+  AlertTriangle, Check
 } from 'lucide-react';
 import { storage, DocumentMeta, DocumentProgress } from '../lib/storage';
-import { parseTxt, parsePdf, parseEpub, parseMobi } from '../lib/parser';
+import { parseTxt, parsePdf, parseEpub, parseMobi, tokenize } from '../lib/parser';
 import { cn } from '../lib/utils';
+import Logo from './Logo';
 
 interface LibraryProps {
   onSelect: (id: string) => void;
@@ -22,41 +24,65 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [pasteTitle, setPasteTitle] = useState('');
   const [pasteContent, setPasteContent] = useState('');
+  const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'error' | 'success' } | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const showToast = (text: string, type: 'error' | 'success' = 'success') => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastMessage({ text, type });
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  };
+
   const loadDocs = async () => {
-    const docs = await storage.getDocuments();
-    const sortedDocs = [...docs].sort((a, b) => b.addedAt - a.addedAt);
-    setDocuments(sortedDocs);
+    try {
+      const docs = await storage.getDocuments();
+      const sortedDocs = [...docs].sort((a, b) => b.addedAt - a.addedAt);
+      setDocuments(sortedDocs);
 
-    const counts: Record<string, number> = {};
-    await Promise.all(
-      sortedDocs.map(async (d) => {
-        const bms = await storage.getBookmarks(d.id);
-        if (bms && bms.length > 0) {
-          counts[d.id] = bms.length;
+      const counts: Record<string, number> = {};
+      await Promise.all(
+        sortedDocs.map(async (d) => {
+          try {
+            const bms = await storage.getBookmarks(d.id);
+            if (bms && bms.length > 0) {
+              counts[d.id] = bms.length;
+            }
+          } catch {
+            // Silently fallback on missing bookmarks
+          }
+        })
+      );
+      setBookmarkCounts(counts);
+
+      // Load recently read documents (up to 5)
+      const recentIds = await storage.getRecentlyRead();
+      const recentList: DocumentMeta[] = [];
+      const progressMap: Record<string, DocumentProgress> = {};
+
+      for (const id of recentIds) {
+        const matched = sortedDocs.find(d => d.id === id);
+        if (matched) {
+          recentList.push(matched);
+          try {
+            const prog = await storage.getDocumentProgress(id);
+            progressMap[id] = prog;
+          } catch {
+            progressMap[id] = { currentWordIndex: 0, wpm: 300 };
+          }
         }
-      })
-    );
-    setBookmarkCounts(counts);
-
-    // Load recently read documents (up to 5)
-    const recentIds = await storage.getRecentlyRead();
-    const recentList: DocumentMeta[] = [];
-    const progressMap: Record<string, DocumentProgress> = {};
-
-    for (const id of recentIds) {
-      const matched = sortedDocs.find(d => d.id === id);
-      if (matched) {
-        recentList.push(matched);
-        const prog = await storage.getDocumentProgress(id);
-        progressMap[id] = prog;
+        if (recentList.length >= 5) break;
       }
-      if (recentList.length >= 5) break;
-    }
 
-    setRecentDocuments(recentList);
-    setRecentProgress(progressMap);
+      setRecentDocuments(recentList);
+      setRecentProgress(progressMap);
+    } catch (err) {
+      console.warn("Failed to load documents list:", err);
+      showToast("Não foi possível carregar alguns itens da biblioteca.", "error");
+    }
   };
 
   useEffect(() => {
@@ -64,8 +90,13 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
   }, []);
 
   const handleSelectDocument = async (id: string) => {
-    await storage.recordRecentlyRead(id);
-    onSelect(id);
+    try {
+      await storage.recordRecentlyRead(id);
+    } catch (err) {
+      console.warn("Failed to record recent read:", err);
+    } finally {
+      onSelect(id);
+    }
   };
 
   const filteredDocuments = useMemo(() => {
@@ -101,7 +132,7 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
       }
 
       if (words.length === 0) {
-        alert("No readable text found in this file.");
+        showToast("Nenhum texto legível foi encontrado neste arquivo.", "error");
         setLoading(false);
         return;
       }
@@ -116,20 +147,27 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
 
       await storage.addDocument(meta, words);
       await loadDocs();
-    } catch (err) {
-      console.error(err);
-      alert("Error reading file.");
+      showToast(`"${meta.title}" importado com sucesso!`, "success");
+    } catch (err: any) {
+      console.error("Upload error:", err);
+      showToast(err?.message || "Erro ao processar arquivo.", "error");
     } finally {
       setLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const handleDelete = async (e: MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (confirm("Delete this document?")) {
-      await storage.deleteDocument(id);
+  const confirmDelete = async () => {
+    if (!deleteCandidateId) return;
+    try {
+      await storage.deleteDocument(deleteCandidateId);
       await loadDocs();
+      showToast("Documento excluído com sucesso.", "success");
+    } catch (err) {
+      console.warn("Delete document error:", err);
+      showToast("Erro ao excluir documento.", "error");
+    } finally {
+      setDeleteCandidateId(null);
     }
   };
 
@@ -138,10 +176,11 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
     
     setLoading(true);
     try {
-      const words = pasteContent.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().split(' ').filter(w => w.length > 0);
+      const words = tokenize(pasteContent);
       
       if (words.length === 0) {
-        alert("No readable text found.");
+        showToast("Nenhuma palavra legível encontrada no texto colado.", "error");
+        setLoading(false);
         return;
       }
 
@@ -158,9 +197,10 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
       setShowPasteModal(false);
       setPasteTitle('');
       setPasteContent('');
-    } catch (err) {
-      console.error(err);
-      alert("Error saving text.");
+      showToast(`"${meta.title}" salvo com sucesso!`, "success");
+    } catch (err: any) {
+      console.error("Paste submit error:", err);
+      showToast(err?.message || "Erro ao salvar texto.", "error");
     } finally {
       setLoading(false);
     }
@@ -172,11 +212,9 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8 md:mb-12 pb-6 border-b border-[#33333c]">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <img 
-              src="/favicon.svg" 
-              alt="Uma palavra logo" 
-              className="w-8 h-8 rounded-[9px] shadow-sm border border-[#33333c]" 
-              referrerPolicy="no-referrer"
+            <Logo 
+              className="w-8 h-8 rounded-[9px] shadow-sm shrink-0" 
+              size={32}
             />
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] text-[#e8e8ec]">
               Uma palavra
@@ -335,7 +373,10 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
                           </span>
                         ) : null}
                         <button 
-                          onClick={(e) => handleDelete(e, doc.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteCandidateId(doc.id);
+                          }}
                           className="opacity-0 group-hover:opacity-100 p-1.5 text-[#9a9aa3] hover:text-[#ff6b63] hover:bg-[#ff6b63]/10 rounded-[8px] transition-all cursor-pointer"
                           title="Excluir documento"
                         >
@@ -363,7 +404,7 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
                     <div className="w-full h-1.5 bg-[#18181c] rounded-full overflow-hidden border border-[#33333c]/40">
                       <div 
                         className="h-full bg-[#FCFD76] transition-all duration-300 rounded-full"
-                        style={{ width: `${percent}%` }}
+                        style={{ width: `${percent}%` }} 
                       />
                     </div>
 
@@ -423,7 +464,10 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
                      <FileText className="w-5 h-5" />}
                   </div>
                   <button 
-                    onClick={(e) => handleDelete(e, doc.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteCandidateId(doc.id);
+                    }}
                     className="opacity-0 group-hover:opacity-100 p-2 text-[#9a9aa3] hover:text-[#ff6b63] hover:bg-[#ff6b63]/10 rounded-[10px] transition-all cursor-pointer"
                     title="Excluir documento"
                   >
@@ -494,6 +538,54 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
           </div>
         )}
       </div>
+
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <div className={cn(
+            "flex items-center gap-2.5 px-4 py-3 rounded-[16px] text-xs sm:text-sm font-semibold shadow-2xl border backdrop-blur-md",
+            toastMessage.type === 'error'
+              ? "bg-[#222228] text-[#F8B7A2] border-[#653a2c]"
+              : "bg-[#222228] text-[#5fa777] border-[#28342b]"
+          )}>
+            {toastMessage.type === 'error' ? (
+              <AlertTriangle className="w-4 h-4 text-[#F8B7A2] shrink-0" />
+            ) : (
+              <Check className="w-4 h-4 text-[#5fa777] shrink-0" />
+            )}
+            <span>{toastMessage.text}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteCandidateId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[rgba(20,20,40,0.6)] backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-[#222228] border border-[#33333c] rounded-[24px] p-6 sm:p-8 w-full max-w-md shadow-2xl">
+            <div className="w-12 h-12 rounded-[14px] bg-[#653a2c] text-[#F8B7A2] flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg sm:text-xl font-bold text-[#e8e8ec] text-center mb-2">Excluir Documento?</h2>
+            <p className="text-xs sm:text-sm text-[#9a9aa3] text-center mb-6 leading-relaxed">
+              Esta ação removerá permanentemente o arquivo, marcadores e todo o progresso de leitura salvo.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeleteCandidateId(null)}
+                className="flex-1 px-4 py-2.5 rounded-[12px] font-semibold text-xs sm:text-sm text-[#9a9aa3] hover:text-[#e8e8ec] hover:bg-[#2a2a32] border border-transparent transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 px-4 py-2.5 rounded-[12px] font-bold text-xs sm:text-sm bg-[#ff6b63] hover:bg-[#fa554c] text-[#18181c] transition-all cursor-pointer"
+              >
+                Sim, Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Paste Modal */}
       {showPasteModal && (

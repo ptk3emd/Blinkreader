@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, TrendingUp, Bookmark as BookmarkIcon, 
   Search, X, Trash2, Edit3, Check, Play, BookOpen, 
-  Clock, FileText, File as FileIcon, Sparkles, Filter, ChevronRight
+  Clock, FileText, File as FileIcon, Sparkles, Filter, ChevronRight,
+  Zap, Calendar, Trophy
 } from 'lucide-react';
 import {
   LineChart,
@@ -54,6 +55,8 @@ export default function Dashboard({ onBack, onOpenDocument, initialTab = 'metric
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [averageWpm, setAverageWpm] = useState<number>(0);
   const [totalSessions, setTotalSessions] = useState<number>(0);
+  const [peakWpm, setPeakWpm] = useState<number>(0);
+  const [activeDays, setActiveDays] = useState<number>(0);
   const [bookmarks, setBookmarks] = useState<DocumentBookmarkItem[]>([]);
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -101,6 +104,10 @@ export default function Dashboard({ onBack, onOpenDocument, initialTab = 'metric
       if (history.length > 0) {
         const totalWpm = history.reduce((sum, entry) => sum + entry.wpm, 0);
         setAverageWpm(Math.round(totalWpm / history.length));
+        setPeakWpm(Math.max(...history.map(h => h.wpm)));
+        
+        const uniqueDaysCount = new Set(history.map(h => new Date(h.timestamp).toDateString())).size;
+        setActiveDays(uniqueDaysCount);
       }
 
       // 2. Documents & All Bookmarks
@@ -160,6 +167,15 @@ export default function Dashboard({ onBack, onOpenDocument, initialTab = 'metric
   const bookmarksWithNotesCount = useMemo(() => {
     return bookmarks.filter(b => !!b.bookmark.note?.trim()).length;
   }, [bookmarks]);
+
+  const readingTier = useMemo(() => {
+    if (!averageWpm) return { label: 'Iniciante', desc: 'Inicie sua primeira leitura', color: 'text-[#9a9aa3] bg-[#1e1e24] border-[#33333c]' };
+    if (averageWpm <= 150) return { label: 'Foco Clínico', desc: 'Leitura analítica de alta precisão', color: 'text-[#F8B7A2] bg-[#653a2c]/20 border-[#F8B7A2]/25' };
+    if (averageWpm <= 250) return { label: 'Leitura Convencional', desc: 'Ritmo mental natural espontâneo', color: 'text-[#e8e8ec] bg-[#2a2a32] border-[#33333c]' };
+    if (averageWpm <= 400) return { label: 'Leitura Eficiente', desc: 'Foco otimizado e subvocalização reduzida', color: 'text-[#c5c5ef] bg-[#35325f]/30 border-[#c5c5ef]/25' };
+    if (averageWpm <= 600) return { label: 'Leitura Dinâmica', desc: 'Processamento cognitivo visual acelerado', color: 'text-[#FCFD76] bg-[#FCFD76]/10 border-[#FCFD76]/25' };
+    return { label: 'Super Leitura', desc: 'Varredura visual cognitiva avançada', color: 'text-[#5fa777] bg-[#28342b]/40 border-[#5fa777]/25' };
+  }, [averageWpm]);
 
   // Actions on bookmarks
   const handleDeleteBookmark = async (docId: string, bookmarkId: string, e?: React.MouseEvent) => {
@@ -310,68 +326,149 @@ export default function Dashboard({ onBack, onOpenDocument, initialTab = 'metric
 
       {/* METRICS VIEW */}
       {activeTab === 'metrics' && (
-        <div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5 mb-8 md:mb-12">
-            <div className="bg-[#222228] border border-[#33333c] rounded-[24px] p-6 shadow-none flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-[#9a9aa3]">
-                  Velocidade Média
+        <div className="space-y-6">
+          {/* Bento Grid layout */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-6 mb-2">
+            
+            {/* Card 1: Velocidade Média (Destaque Principal) */}
+            <div className="md:col-span-7 bg-[#222228] border border-[#33333c] rounded-[24px] p-6 sm:p-8 flex flex-col justify-between min-h-[220px] transition-all hover:border-[#FCFD76]/35 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-[#35325f]/10 rounded-full blur-3xl group-hover:bg-[#35325f]/15 transition-all duration-300 pointer-events-none" />
+              
+              <div className="flex items-center justify-between z-10">
+                <span className="text-[11px] font-extrabold tracking-[0.14em] uppercase text-[#9a9aa3]">
+                  Velocidade de Leitura
                 </span>
-                <div className="w-8 h-8 rounded-[8px] bg-[#35325f] text-[#c5c5ef] flex items-center justify-center">
-                  <TrendingUp className="w-4 h-4" />
-                </div>
+                <span className={cn("text-xs font-bold px-3 py-1 rounded-[30px] border font-sans", readingTier.color)}>
+                  {readingTier.label}
+                </span>
               </div>
-              <div className="text-3xl sm:text-4xl font-extrabold font-mono tracking-[-0.04em] text-[#e8e8ec]">
-                {averageWpm || '--'} <span className="text-sm font-semibold text-[#9a9aa3] font-sans">WPM</span>
+              
+              <div className="my-4 z-10">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl sm:text-5xl font-black font-mono tracking-[-0.04em] text-[#e8e8ec]">
+                    {averageWpm || '--'}
+                  </span>
+                  <span className="text-base font-bold text-[#9a9aa3] font-sans">WPM</span>
+                </div>
+                <p className="text-xs text-[#9a9aa3] mt-2 leading-relaxed font-sans max-w-sm">
+                  {readingTier.desc}. {averageWpm > 0 && `Ritmo equivalente a aproximadamente ${Math.round(averageWpm * 1.2)} sílabas por segundo.`}
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-[#33333c]/60 flex items-center justify-between text-[11px] text-[#9a9aa3] font-mono z-10">
+                <span>BENCHMARK ADULTO: 200 - 250 WPM</span>
+                {averageWpm > 250 && (
+                  <span className="text-[#5fa777] font-bold">DESEMPENHO ACIMA DA MÉDIA</span>
+                )}
               </div>
             </div>
 
-            <div className="bg-[#222228] border border-[#33333c] rounded-[24px] p-6 shadow-none flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-[#9a9aa3]">
-                  Sessões Registradas
+            {/* Card 2: Recorde Absoluto */}
+            <div className="md:col-span-5 bg-[#222228] border border-[#33333c] rounded-[24px] p-6 sm:p-8 flex flex-col justify-between min-h-[220px] transition-all hover:border-[#FCFD76]/35 relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold tracking-[0.14em] uppercase text-[#9a9aa3]">
+                  Recorde Absoluto
                 </span>
-                <div className="w-8 h-8 rounded-[8px] bg-[#28342b] text-[#5fa777] flex items-center justify-center">
-                  <span className="text-xs font-bold font-mono">#</span>
+                <div className="w-8 h-8 rounded-[10px] bg-[#3a3520] text-[#FCFD76] border border-[#FCFD76]/20 flex items-center justify-center">
+                  <Trophy className="w-4 h-4 text-[#FCFD76] fill-current" />
                 </div>
               </div>
-              <div className="text-3xl sm:text-4xl font-extrabold font-mono tracking-[-0.04em] text-[#e8e8ec]">
-                {totalSessions}
+
+              <div className="my-3">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-4xl font-black font-mono tracking-[-0.04em] text-[#FCFD76]">
+                    {peakWpm || '--'}
+                  </span>
+                  <span className="text-sm font-bold text-[#FCFD76] font-sans">WPM</span>
+                </div>
+                <p className="text-xs text-[#9a9aa3] mt-2 leading-relaxed">
+                  Maior taxa de leitura estável registrada no leitor RSVP.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-[#33333c]/60 text-[11px] text-[#9a9aa3] font-mono flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-[#FCFD76]" />
+                <span>
+                  {averageWpm && peakWpm ? `MARGEM DE PICO: +${Math.round(((peakWpm - averageWpm) / averageWpm) * 100)}%` : 'REGISTRE LEITURAS PARA COMPARAR'}
+                </span>
               </div>
             </div>
 
-            <div className="bg-[#222228] border border-[#33333c] rounded-[24px] p-6 shadow-none flex flex-col justify-between sm:col-span-2 md:col-span-1">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-[#9a9aa3]">
-                  Marcadores Salvos
+            {/* Card 3: Sessões & Consistência */}
+            <div className="md:col-span-6 bg-[#222228] border border-[#33333c] rounded-[24px] p-6 sm:p-8 flex flex-col justify-between min-h-[160px] transition-all hover:border-[#FCFD76]/35">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold tracking-[0.14em] uppercase text-[#9a9aa3]">
+                  Engajamento de Estudos
                 </span>
-                <div className="w-8 h-8 rounded-[8px] bg-[#3a3520] text-[#FCFD76] flex items-center justify-center">
-                  <BookmarkIcon className="w-4 h-4 fill-current" />
+                <div className="w-8 h-8 rounded-[10px] bg-[#28342b] text-[#5fa777] border border-[#5fa777]/25 flex items-center justify-center">
+                  <Calendar className="w-4 h-4 text-[#5fa777]" />
                 </div>
               </div>
-              <div className="flex items-baseline justify-between">
-                <div className="text-3xl sm:text-4xl font-extrabold font-mono tracking-[-0.04em] text-[#e8e8ec]">
-                  {bookmarks.length}
+
+              <div className="grid grid-cols-2 gap-4 my-4">
+                <div>
+                  <span className="text-[10px] font-extrabold text-[#9a9aa3] uppercase block mb-1">Total Sessões</span>
+                  <span className="text-2xl sm:text-3xl font-black font-mono text-[#e8e8ec]">{totalSessions}</span>
                 </div>
+                <div className="border-l border-[#33333c]/80 pl-4">
+                  <span className="text-[10px] font-extrabold text-[#9a9aa3] uppercase block mb-1">Dias Ativos</span>
+                  <span className="text-2xl sm:text-3xl font-black font-mono text-[#e8e8ec]">{activeDays}</span>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-[#9a9aa3] font-mono">
+                REGISTRO GERAL DE SESSÕES ATIVAS
+              </div>
+            </div>
+
+            {/* Card 4: Marcadores & Compreensão */}
+            <div className="md:col-span-6 bg-[#222228] border border-[#33333c] rounded-[24px] p-6 sm:p-8 flex flex-col justify-between min-h-[160px] transition-all hover:border-[#FCFD76]/35">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-extrabold tracking-[0.14em] uppercase text-[#9a9aa3]">
+                  Notas & Retenção
+                </span>
+                <div className="w-8 h-8 rounded-[10px] bg-[#2b254a] text-[#c5c5ef] border border-[#c5c5ef]/20 flex items-center justify-center">
+                  <BookmarkIcon className="w-4 h-4 text-[#c5c5ef] fill-current" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 my-4">
+                <div>
+                  <span className="text-[10px] font-extrabold text-[#9a9aa3] uppercase block mb-1">Marcadores</span>
+                  <span className="text-2xl sm:text-3xl font-black font-mono text-[#e8e8ec]">{bookmarks.length}</span>
+                </div>
+                <div className="border-l border-[#33333c]/80 pl-4">
+                  <span className="text-[10px] font-extrabold text-[#9a9aa3] uppercase block mb-1">Anotados</span>
+                  <span className="text-2xl sm:text-3xl font-black font-mono text-[#e8e8ec]">{bookmarksWithNotesCount}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-[#9a9aa3] font-mono uppercase">Notas de fixação cognitiva</span>
                 <button
                   type="button"
                   onClick={() => setActiveTab('bookmarks')}
-                  className="text-xs text-[#FCFD76] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                  className="text-xs text-[#FCFD76] hover:underline font-bold flex items-center gap-1 cursor-pointer"
                 >
                   <span>Ver todos</span>
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
+
           </div>
 
-          <div className="bg-[#222228] border border-[#33333c] rounded-[24px] p-6 sm:p-8 h-[420px] flex flex-col">
+          {/* Chart Section */}
+          <div className="bg-[#222228] border border-[#33333c] rounded-[24px] p-6 sm:p-8 h-[380px] flex flex-col">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-extrabold text-[#e8e8ec] tracking-[-0.02em]">
-                Evolução de Velocidade (WPM)
-              </h2>
-              <span className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#c5c5ef] bg-[#35325f] px-3 py-1 rounded-[30px]">
-                Fluxo Contínuo
+              <div>
+                <h2 className="text-base sm:text-lg font-black text-[#e8e8ec] tracking-[-0.02em]">
+                  Evolução Cognitiva de Velocidade
+                </h2>
+                <p className="text-xs text-[#9a9aa3] mt-0.5">Progresso histórico de palavras por minuto (WPM)</p>
+              </div>
+              <span className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#c5c5ef] bg-[#35325f]/40 border border-[#c5c5ef]/20 px-3 py-1 rounded-[30px]">
+                Linha Temporal
               </span>
             </div>
             
@@ -383,13 +480,13 @@ export default function Dashboard({ onBack, onOpenDocument, initialTab = 'metric
                     <XAxis 
                       dataKey="date" 
                       stroke="#9a9aa3" 
-                      tick={{ fill: '#9a9aa3', fontSize: 12, fontFamily: 'Urbanist' }} 
+                      tick={{ fill: '#9a9aa3', fontSize: 11, fontFamily: 'Urbanist' }} 
                       tickLine={false}
                       axisLine={false}
                     />
                     <YAxis 
                       stroke="#9a9aa3" 
-                      tick={{ fill: '#9a9aa3', fontSize: 12, fontFamily: 'monospace' }} 
+                      tick={{ fill: '#9a9aa3', fontSize: 11, fontFamily: 'monospace' }} 
                       tickLine={false}
                       axisLine={false}
                     />
@@ -400,7 +497,7 @@ export default function Dashboard({ onBack, onOpenDocument, initialTab = 'metric
                       stroke="#FCFD76" 
                       strokeWidth={3}
                       dot={{ fill: '#FCFD76', strokeWidth: 2, r: 4 }}
-                      activeDot={{ r: 6, fill: '#212121', stroke: '#FCFD76', strokeWidth: 2 }}
+                      activeDot={{ r: 6, fill: '#18181c', stroke: '#FCFD76', strokeWidth: 2 }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -408,7 +505,7 @@ export default function Dashboard({ onBack, onOpenDocument, initialTab = 'metric
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-[#9a9aa3] pb-6">
                 <TrendingUp className="w-10 h-10 mb-3 text-[#33333c]" />
-                <p className="text-base font-bold text-[#c2c2c9]">Nenhum histórico registrado ainda</p>
+                <p className="text-sm font-bold text-[#c2c2c9]">Nenhum histórico registrado ainda</p>
                 <p className="text-xs text-[#9a9aa3] mt-1">Conclua leituras na biblioteca para gerar o gráfico de evolução.</p>
               </div>
             )}

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { 
   ArrowLeft, Play, Pause, List, ChevronLeft, ChevronRight, 
   Minus, Plus, X, Settings, Zap, Bookmark as BookmarkIcon, 
-  BookmarkCheck, BookmarkPlus, Trash2, RotateCcw, Columns2 
+  BookmarkCheck, BookmarkPlus, Trash2, RotateCcw, Columns2,
+  AlertTriangle, BookOpen, RefreshCw, Search
 } from 'lucide-react';
 import { storage, DocumentProgress, Theme, Bookmark } from '../lib/storage';
 import { formatRSVPWord, RSVPWord } from '../lib/rsvp';
@@ -15,6 +16,14 @@ interface ReaderProps {
   documentId: string;
   initialWordIndex?: number;
   onBack: () => void;
+}
+
+function normalizeSearchText(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, "");
 }
 
 function formatBookmarkDate(timestamp: number): string {
@@ -62,6 +71,7 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
   const [progress, setProgress] = useState<DocumentProgress>({ currentWordIndex: 0, wpm: 300 });
   const [isPlaying, setIsPlaying] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showNav, setShowNav] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [navPreviewIndex, setNavPreviewIndex] = useState(0);
@@ -72,7 +82,8 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
   const [autoSpeedAdjustment, setAutoSpeedAdjustment] = useState<boolean>(true);
   const [speedNotification, setSpeedNotification] = useState<{ message: string; type: 'up' | 'down'; id: number } | null>(null);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
-  const [activeNavTab, setActiveNavTab] = useState<'toc' | 'bookmarks'>('toc');
+  const [activeNavTab, setActiveNavTab] = useState<'toc' | 'bookmarks' | 'search'>('toc');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [bookmarkToast, setBookmarkToast] = useState<{ message: string; id: number } | null>(null);
   const [resumeToast, setResumeToast] = useState<{ message: string; id: number } | null>(null);
   const [exactWordInput, setExactWordInput] = useState<string>('');
@@ -84,6 +95,61 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
   const paragraphs = useMemo<ParagraphData[]>(() => {
     return computeParagraphs(words);
   }, [words]);
+
+  // Compute search results across all words in the document
+  const searchResults = useMemo(() => {
+    const rawQuery = searchQuery.trim();
+    if (!rawQuery || rawQuery.length < 2 || words.length === 0) return [];
+    
+    const normQuery = normalizeSearchText(rawQuery);
+    if (!normQuery) return [];
+
+    const queryParts = normQuery.split(/\s+/).filter(Boolean);
+    const results: { index: number; snippet: string; matchWord: string }[] = [];
+    const maxResults = 200; // Performance cap for instant UI response
+
+    if (queryParts.length === 1) {
+      const singleTerm = queryParts[0];
+      for (let i = 0; i < words.length; i++) {
+        const normWord = normalizeSearchText(words[i]);
+        if (normWord.includes(singleTerm)) {
+          const start = Math.max(0, i - 4);
+          const end = Math.min(words.length, i + 6);
+          const snippet = words.slice(start, end).join(' ');
+          results.push({
+            index: i,
+            snippet,
+            matchWord: words[i]
+          });
+          if (results.length >= maxResults) break;
+        }
+      }
+    } else {
+      // Multi-word phrase search
+      for (let i = 0; i <= words.length - queryParts.length; i++) {
+        let matchesAll = true;
+        for (let p = 0; p < queryParts.length; p++) {
+          if (!normalizeSearchText(words[i + p]).includes(queryParts[p])) {
+            matchesAll = false;
+            break;
+          }
+        }
+        if (matchesAll) {
+          const start = Math.max(0, i - 3);
+          const end = Math.min(words.length, i + queryParts.length + 5);
+          const snippet = words.slice(start, end).join(' ');
+          results.push({
+            index: i,
+            snippet,
+            matchWord: words.slice(i, i + queryParts.length).join(' ')
+          });
+          if (results.length >= maxResults) break;
+        }
+      }
+    }
+
+    return results;
+  }, [searchQuery, words]);
 
   const triggerBookmarkToast = useCallback((message: string) => {
     if (bookmarkToastTimeoutRef.current) {
@@ -138,76 +204,139 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
   }, []);
   
   const saveProgress = useCallback(() => {
-    const currentIdx = currentWordIndexRef.current;
-    const currentWpm = wpmRef.current;
-    lastSavedWordIndexRef.current = currentIdx;
-    storage.updateDocumentProgress(documentId, {
-      currentWordIndex: currentIdx,
-      wpm: currentWpm
-    });
+    try {
+      const currentIdx = currentWordIndexRef.current;
+      const currentWpm = wpmRef.current;
+      lastSavedWordIndexRef.current = currentIdx;
+      storage.updateDocumentProgress(documentId, {
+        currentWordIndex: currentIdx,
+        wpm: currentWpm
+      }).catch(err => {
+        console.warn("Silent storage progress save warning:", err);
+      });
+    } catch (err) {
+      console.warn("Storage progress sync error:", err);
+    }
   }, [documentId]);
 
   useEffect(() => {
-    const loadData = async () => {
-      // Record document as recently opened
-      await storage.recordRecentlyRead(documentId);
+    let isMounted = true;
+    setLoading(true);
+    setLoadError(null);
 
-      const docWords = await storage.getDocumentWords(documentId);
-      let cleanWords: string[] = [];
-      if (docWords && docWords.length > 0) {
-        cleanWords = docWords.flatMap(w => tokenize(w));
+    const loadData = async () => {
+      try {
+        // Record document as recently opened
+        try {
+          await storage.recordRecentlyRead(documentId);
+        } catch (e) {
+          console.warn("Recent read sync warning:", e);
+        }
+
+        const docWords = await storage.getDocumentWords(documentId);
+        if (!isMounted) return;
+
+        if (!docWords || docWords.length === 0) {
+          setWords([]);
+          setLoading(false);
+          return;
+        }
+
+        let cleanWords: string[] = [];
+        try {
+          cleanWords = docWords.flatMap(w => tokenize(w));
+        } catch {
+          cleanWords = docWords;
+        }
+
+        if (!isMounted) return;
         setWords(cleanWords);
+
         if (cleanWords.length !== docWords.length) {
           storage.updateDocumentWords(documentId, cleanWords).catch(() => {});
         }
-      }
-      const totalWordsCount = cleanWords.length;
-      
-      const docProgress = await storage.getDocumentProgress(documentId);
-      const savedIndex = docProgress.currentWordIndex || 0;
-      const targetIndex = initialWordIndex !== undefined ? initialWordIndex : savedIndex;
-      const initialIndex = Math.max(0, Math.min(Math.max(0, totalWordsCount - 1), targetIndex));
-      
-      setProgress({
-        currentWordIndex: initialIndex,
-        wpm: docProgress.wpm || 300
-      });
-      currentWordIndexRef.current = initialIndex;
-      lastSavedWordIndexRef.current = initialIndex;
-      wpmRef.current = docProgress.wpm || 300;
-      setNavPreviewIndex(initialIndex);
-      setExactWordInput(String(initialIndex + 1));
 
-      if (initialWordIndex !== undefined && totalWordsCount > 0) {
-        const percent = Math.min(100, Math.round(((initialIndex + 1) / totalWordsCount) * 100));
-        triggerResumeToast(`Marcador carregado: palavra ${(initialIndex + 1).toLocaleString()} (${percent}%)`);
-      } else if (initialIndex > 0 && totalWordsCount > 0) {
-        const percent = Math.min(100, Math.round(((initialIndex + 1) / totalWordsCount) * 100));
-        triggerResumeToast(`Retomando da palavra ${(initialIndex + 1).toLocaleString()} de ${totalWordsCount.toLocaleString()} (${percent}%)`);
-      }
+        const totalWordsCount = cleanWords.length;
+        
+        let docProgress: DocumentProgress = { currentWordIndex: 0, wpm: 300 };
+        try {
+          docProgress = await storage.getDocumentProgress(documentId);
+        } catch (e) {
+          console.warn("Doc progress read error:", e);
+        }
 
-      const userSettings = await storage.getSettings();
-      setTheme(userSettings.theme);
-      if (userSettings.fontSize) {
-        setFontSize(userSettings.fontSize);
-      }
-      if (userSettings.showContextWords !== undefined) {
-        setShowContextWords(userSettings.showContextWords);
-      }
-      if (userSettings.autoSpeedAdjustment !== undefined) {
-        setAutoSpeedAdjustment(userSettings.autoSpeedAdjustment);
-        autoSpeedAdjustmentRef.current = userSettings.autoSpeedAdjustment;
-      }
-      if (userSettings.showSplitParagraphView !== undefined) {
-        setShowSplitView(userSettings.showSplitParagraphView);
-      }
+        if (!isMounted) return;
 
-      const docBookmarks = await storage.getBookmarks(documentId);
-      setBookmarks(docBookmarks);
+        const savedIndex = typeof docProgress.currentWordIndex === 'number' ? docProgress.currentWordIndex : 0;
+        const targetIndex = initialWordIndex !== undefined ? initialWordIndex : savedIndex;
+        const initialIndex = Math.max(0, Math.min(Math.max(0, totalWordsCount - 1), targetIndex));
+        const initialWpm = typeof docProgress.wpm === 'number' && !isNaN(docProgress.wpm) ? docProgress.wpm : 300;
+        
+        setProgress({
+          currentWordIndex: initialIndex,
+          wpm: initialWpm
+        });
+        currentWordIndexRef.current = initialIndex;
+        lastSavedWordIndexRef.current = initialIndex;
+        wpmRef.current = initialWpm;
+        setNavPreviewIndex(initialIndex);
+        setExactWordInput(String(initialIndex + 1));
 
-      setLoading(false);
+        if (initialWordIndex !== undefined && totalWordsCount > 0) {
+          const percent = Math.min(100, Math.round(((initialIndex + 1) / totalWordsCount) * 100));
+          triggerResumeToast(`Marcador carregado: palavra ${(initialIndex + 1).toLocaleString()} (${percent}%)`);
+        } else if (initialIndex > 0 && totalWordsCount > 0) {
+          const percent = Math.min(100, Math.round(((initialIndex + 1) / totalWordsCount) * 100));
+          triggerResumeToast(`Retomando da palavra ${(initialIndex + 1).toLocaleString()} de ${totalWordsCount.toLocaleString()} (${percent}%)`);
+        }
+
+        try {
+          const userSettings = await storage.getSettings();
+          if (isMounted) {
+            setTheme(userSettings.theme || 'dark');
+            if (userSettings.fontSize) {
+              setFontSize(userSettings.fontSize);
+            }
+            if (userSettings.showContextWords !== undefined) {
+              setShowContextWords(userSettings.showContextWords);
+            }
+            if (userSettings.autoSpeedAdjustment !== undefined) {
+              setAutoSpeedAdjustment(userSettings.autoSpeedAdjustment);
+              autoSpeedAdjustmentRef.current = userSettings.autoSpeedAdjustment;
+            }
+            if (userSettings.showSplitParagraphView !== undefined) {
+              setShowSplitView(userSettings.showSplitParagraphView);
+            }
+          }
+        } catch (settingsErr) {
+          console.warn("Settings load error:", settingsErr);
+        }
+
+        try {
+          const docBookmarks = await storage.getBookmarks(documentId);
+          if (isMounted) {
+            setBookmarks(Array.isArray(docBookmarks) ? docBookmarks : []);
+          }
+        } catch (bmsErr) {
+          console.warn("Bookmarks load error:", bmsErr);
+        }
+      } catch (err: any) {
+        console.error("Critical error loading document:", err);
+        if (isMounted) {
+          setLoadError(err?.message || "Ocorreu um erro ao carregar os dados deste documento.");
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
     };
+
     loadData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [documentId, initialWordIndex, triggerResumeToast]);
 
   // Lifecycle listeners for instant crash-proof state persistence
@@ -369,114 +498,188 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
   };
 
   const handleBack = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setIsPlaying(false);
-    saveProgress();
-    onBack();
-  };
-
-  const restartReading = () => {
-    currentWordIndexRef.current = 0;
-    setProgress(p => ({ ...p, currentWordIndex: 0 }));
-    saveProgress();
-    triggerResumeToast('Leitura reiniciada do início (palavra 1)');
-  };
-
-  const updateWpm = (delta: number) => {
-    focusStreakWordsRef.current = 0;
-    wordsInCurrentPlaySessionRef.current = 0;
-    const newWpm = Math.max(50, Math.min(1000, wpmRef.current + delta));
-    wpmRef.current = newWpm;
-    setProgress(p => ({ ...p, wpm: newWpm }));
-    saveProgress();
-  };
-
-  const setWpmDirectly = (value: number) => {
-    focusStreakWordsRef.current = 0;
-    wordsInCurrentPlaySessionRef.current = 0;
-    const newWpm = Math.max(50, Math.min(1000, Math.round(value)));
-    wpmRef.current = newWpm;
-    setProgress(p => ({ ...p, wpm: newWpm }));
-    saveProgress();
-  };
-
-  const jumpWords = (delta: number) => {
-    let newIndex = currentWordIndexRef.current + delta;
-    newIndex = Math.max(0, Math.min(words.length - 1, newIndex));
-    currentWordIndexRef.current = newIndex;
-    setProgress(p => ({ ...p, currentWordIndex: newIndex }));
-    saveProgress();
-
-    // If rewinding backwards, adjust pacing slightly to aid comprehension
-    if (delta < 0) {
-      focusStreakWordsRef.current = 0;
-      wordsInCurrentPlaySessionRef.current = 0;
-      if (autoSpeedAdjustmentRef.current && wpmRef.current > 60) {
-        const newWpm = Math.max(50, wpmRef.current - 10);
-        wpmRef.current = newWpm;
-        setProgress(p => ({ ...p, wpm: newWpm }));
-        saveProgress();
-        triggerSpeedNotification(`-10 WPM · Rewind adjusted (${newWpm} WPM)`, 'down');
-      }
+    try {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setIsPlaying(false);
+      saveProgress();
+    } catch (err) {
+      console.warn("Error during reader back navigation:", err);
+    } finally {
+      onBack();
     }
   };
 
-  const openNav = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsPlaying(false);
-    setNavPreviewIndex(currentWordIndexRef.current);
-    setExactWordInput(String(currentWordIndexRef.current + 1));
-    setShowNav(true);
+  const restartReading = () => {
+    try {
+      currentWordIndexRef.current = 0;
+      setProgress(p => ({ ...p, currentWordIndex: 0 }));
+      saveProgress();
+      triggerResumeToast('Leitura reiniciada do início (palavra 1)');
+    } catch (err) {
+      console.warn("Restart reading error:", err);
+    }
+  };
+
+  const updateWpm = (delta: number) => {
+    try {
+      focusStreakWordsRef.current = 0;
+      wordsInCurrentPlaySessionRef.current = 0;
+      const baseWpm = typeof wpmRef.current === 'number' && !isNaN(wpmRef.current) ? wpmRef.current : 300;
+      const newWpm = Math.max(50, Math.min(1000, baseWpm + delta));
+      wpmRef.current = newWpm;
+      setProgress(p => ({ ...p, wpm: newWpm }));
+      saveProgress();
+    } catch (err) {
+      console.warn("Update WPM error:", err);
+    }
+  };
+
+  const setWpmDirectly = (value: number) => {
+    try {
+      focusStreakWordsRef.current = 0;
+      wordsInCurrentPlaySessionRef.current = 0;
+      const parsed = typeof value === 'number' && !isNaN(value) ? value : 300;
+      const newWpm = Math.max(50, Math.min(1000, Math.round(parsed)));
+      wpmRef.current = newWpm;
+      setProgress(p => ({ ...p, wpm: newWpm }));
+      saveProgress();
+    } catch (err) {
+      console.warn("Direct WPM setting error:", err);
+    }
+  };
+
+  const jumpWords = (delta: number) => {
+    try {
+      if (!words || words.length === 0) return;
+      let newIndex = currentWordIndexRef.current + delta;
+      newIndex = Math.max(0, Math.min(words.length - 1, newIndex));
+      currentWordIndexRef.current = newIndex;
+      setProgress(p => ({ ...p, currentWordIndex: newIndex }));
+      saveProgress();
+
+      // If rewinding backwards, adjust pacing slightly to aid comprehension
+      if (delta < 0) {
+        focusStreakWordsRef.current = 0;
+        wordsInCurrentPlaySessionRef.current = 0;
+        if (autoSpeedAdjustmentRef.current && wpmRef.current > 60) {
+          const newWpm = Math.max(50, wpmRef.current - 10);
+          wpmRef.current = newWpm;
+          setProgress(p => ({ ...p, wpm: newWpm }));
+          saveProgress();
+          triggerSpeedNotification(`-10 WPM · Rewind adjusted (${newWpm} WPM)`, 'down');
+        }
+      }
+    } catch (err) {
+      console.warn("Jump words error:", err);
+    }
+  };
+
+  const openNav = (e?: React.MouseEvent, tab?: 'toc' | 'bookmarks' | 'search') => {
+    if (e) e.stopPropagation();
+    try {
+      setIsPlaying(false);
+      const safeIndex = Math.max(0, Math.min(Math.max(0, words.length - 1), currentWordIndexRef.current));
+      setNavPreviewIndex(safeIndex);
+      setExactWordInput(String(safeIndex + 1));
+      if (tab) {
+        setActiveNavTab(tab);
+      }
+      setShowNav(true);
+    } catch (err) {
+      console.warn("Open nav error:", err);
+    }
+  };
+
+  const goToPrevSearchResult = () => {
+    if (searchResults.length === 0) return;
+    const prevList = searchResults.filter(r => r.index < navPreviewIndex);
+    const target = prevList.length > 0 ? prevList[prevList.length - 1] : searchResults[searchResults.length - 1];
+    if (target) {
+      setNavPreviewIndex(target.index);
+      setExactWordInput(String(target.index + 1));
+    }
+  };
+
+  const goToNextSearchResult = () => {
+    if (searchResults.length === 0) return;
+    const nextList = searchResults.filter(r => r.index > navPreviewIndex);
+    const target = nextList.length > 0 ? nextList[0] : searchResults[0];
+    if (target) {
+      setNavPreviewIndex(target.index);
+      setExactWordInput(String(target.index + 1));
+    }
   };
 
   const jumpToNavIndex = () => {
-    currentWordIndexRef.current = navPreviewIndex;
-    setProgress(p => ({ ...p, currentWordIndex: navPreviewIndex }));
-    setShowNav(false);
-    saveProgress();
+    try {
+      const safeIndex = Math.max(0, Math.min(Math.max(0, words.length - 1), navPreviewIndex));
+      currentWordIndexRef.current = safeIndex;
+      setProgress(p => ({ ...p, currentWordIndex: safeIndex }));
+      setShowNav(false);
+      saveProgress();
+    } catch (err) {
+      console.warn("Jump to nav index error:", err);
+      setShowNav(false);
+    }
   };
 
   const handleDirectWordSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const parsedNum = parseInt(exactWordInput, 10);
-    if (!isNaN(parsedNum) && words.length > 0) {
-      const targetIdx = Math.max(0, Math.min(words.length - 1, parsedNum - 1));
-      setNavPreviewIndex(targetIdx);
-      setExactWordInput(String(targetIdx + 1));
+    try {
+      const parsedNum = parseInt(exactWordInput, 10);
+      if (!isNaN(parsedNum) && words.length > 0) {
+        const targetIdx = Math.max(0, Math.min(words.length - 1, parsedNum - 1));
+        setNavPreviewIndex(targetIdx);
+        setExactWordInput(String(targetIdx + 1));
+      }
+    } catch (err) {
+      console.warn("Direct word submit error:", err);
     }
   };
 
   const jumpToBookmarkIndex = (index: number) => {
-    currentWordIndexRef.current = index;
-    setProgress(p => ({ ...p, currentWordIndex: index }));
-    saveProgress();
-    setShowNav(false);
-    triggerBookmarkToast(`Saltou para o marcador na palavra ${(index + 1).toLocaleString()}`);
+    try {
+      const safeIndex = Math.max(0, Math.min(Math.max(0, words.length - 1), index));
+      currentWordIndexRef.current = safeIndex;
+      setProgress(p => ({ ...p, currentWordIndex: safeIndex }));
+      saveProgress();
+      setShowNav(false);
+      triggerBookmarkToast(`Saltou para o marcador na palavra ${(safeIndex + 1).toLocaleString()}`);
+    } catch (err) {
+      console.warn("Jump to bookmark error:", err);
+      setShowNav(false);
+    }
   };
 
   const toggleBookmarkAtIndex = useCallback(async (index: number) => {
-    const existing = bookmarks.find(b => b.wordIndex === index);
-    if (existing) {
-      await storage.removeBookmark(documentId, existing.id);
-      setBookmarks(prev => prev.filter(b => b.id !== existing.id));
-      triggerBookmarkToast(`Marcador removido (palavra ${(index + 1).toLocaleString()})`);
-    } else {
-      const start = Math.max(0, index - 2);
-      const end = Math.min(words.length, index + 6);
-      const snippet = words.slice(start, end).join(' ');
-      const newBm: Bookmark = {
-        id: `bm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        wordIndex: index,
-        snippet: snippet || `Palavra ${index + 1}`,
-        timestamp: Date.now()
-      };
-      await storage.addBookmark(documentId, newBm);
-      setBookmarks(prev => {
-        const next = [...prev.filter(b => b.wordIndex !== index), newBm];
-        next.sort((a, b) => a.wordIndex - b.wordIndex);
-        return next;
-      });
-      triggerBookmarkToast(`Marcador salvo na palavra ${(index + 1).toLocaleString()}`);
+    if (!words || words.length === 0) return;
+    const safeIndex = Math.max(0, Math.min(words.length - 1, index));
+    const existing = bookmarks.find(b => b.wordIndex === safeIndex);
+    try {
+      if (existing) {
+        setBookmarks(prev => prev.filter(b => b.id !== existing.id));
+        await storage.removeBookmark(documentId, existing.id);
+        triggerBookmarkToast(`Marcador removido (palavra ${(safeIndex + 1).toLocaleString()})`);
+      } else {
+        const start = Math.max(0, safeIndex - 2);
+        const end = Math.min(words.length, safeIndex + 6);
+        const snippet = words.slice(start, end).join(' ');
+        const newBm: Bookmark = {
+          id: `bm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          wordIndex: safeIndex,
+          snippet: snippet || `Palavra ${safeIndex + 1}`,
+          timestamp: Date.now()
+        };
+        setBookmarks(prev => {
+          const next = [...prev.filter(b => b.wordIndex !== safeIndex), newBm];
+          next.sort((a, b) => a.wordIndex - b.wordIndex);
+          return next;
+        });
+        await storage.addBookmark(documentId, newBm);
+        triggerBookmarkToast(`Marcador salvo na palavra ${(safeIndex + 1).toLocaleString()}`);
+      }
+    } catch (err) {
+      console.warn("Toggle bookmark error:", err);
     }
   }, [bookmarks, documentId, words, triggerBookmarkToast]);
 
@@ -486,79 +689,115 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
 
   const deleteBookmark = useCallback(async (bookmarkId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    await storage.removeBookmark(documentId, bookmarkId);
-    setBookmarks(prev => prev.filter(b => b.id !== bookmarkId));
-    triggerBookmarkToast('Marcador excluído');
+    try {
+      setBookmarks(prev => prev.filter(b => b.id !== bookmarkId));
+      await storage.removeBookmark(documentId, bookmarkId);
+      triggerBookmarkToast('Marcador excluído');
+    } catch (err) {
+      console.warn("Delete bookmark error:", err);
+    }
   }, [documentId, triggerBookmarkToast]);
 
   const handleProgressSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
-    if (words.length <= 1) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-    const newIndex = Math.min(words.length - 1, Math.round(percentage * (words.length - 1)));
-    
-    // Check if user seeks back significantly (> 20 words)
-    if (newIndex < currentWordIndexRef.current - 20) {
-      focusStreakWordsRef.current = 0;
-      wordsInCurrentPlaySessionRef.current = 0;
-      if (autoSpeedAdjustmentRef.current && wpmRef.current > 60) {
-        const newWpm = Math.max(50, wpmRef.current - 10);
-        wpmRef.current = newWpm;
-        saveProgress();
-        triggerSpeedNotification(`-10 WPM · Seek adjusted (${newWpm} WPM)`, 'down');
+    try {
+      if (words.length <= 1) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+      const newIndex = Math.min(words.length - 1, Math.round(percentage * (words.length - 1)));
+      
+      // Check if user seeks back significantly (> 20 words)
+      if (newIndex < currentWordIndexRef.current - 20) {
+        focusStreakWordsRef.current = 0;
+        wordsInCurrentPlaySessionRef.current = 0;
+        if (autoSpeedAdjustmentRef.current && wpmRef.current > 60) {
+          const newWpm = Math.max(50, wpmRef.current - 10);
+          wpmRef.current = newWpm;
+          saveProgress();
+          triggerSpeedNotification(`-10 WPM · Seek adjusted (${newWpm} WPM)`, 'down');
+        }
       }
-    }
 
-    currentWordIndexRef.current = newIndex;
-    setProgress(p => ({ ...p, currentWordIndex: newIndex }));
-    saveProgress();
+      currentWordIndexRef.current = newIndex;
+      setProgress(p => ({ ...p, currentWordIndex: newIndex }));
+      saveProgress();
+    } catch (err) {
+      console.warn("Progress seek error:", err);
+    }
   };
 
   const updateTheme = (newTheme: Theme) => {
-    setTheme(newTheme);
-    storage.updateSettings({ theme: newTheme });
+    try {
+      setTheme(newTheme);
+      storage.updateSettings({ theme: newTheme }).catch(() => {});
+    } catch (err) {
+      console.warn("Update theme error:", err);
+    }
   };
 
   const updateFontSize = (newSize: number) => {
-    setFontSize(newSize);
-    storage.updateSettings({ fontSize: newSize });
+    try {
+      setFontSize(newSize);
+      storage.updateSettings({ fontSize: newSize }).catch(() => {});
+    } catch (err) {
+      console.warn("Update font size error:", err);
+    }
   };
 
   const updateShowContextWords = (enabled: boolean) => {
-    setShowContextWords(enabled);
-    storage.updateSettings({ showContextWords: enabled });
+    try {
+      setShowContextWords(enabled);
+      storage.updateSettings({ showContextWords: enabled }).catch(() => {});
+    } catch (err) {
+      console.warn("Update show context words error:", err);
+    }
   };
 
   const updateAutoSpeedAdjustment = (enabled: boolean) => {
-    setAutoSpeedAdjustment(enabled);
-    autoSpeedAdjustmentRef.current = enabled;
-    storage.updateSettings({ autoSpeedAdjustment: enabled });
-    if (enabled) {
-      triggerSpeedNotification('Adaptive WPM Enabled', 'up');
+    try {
+      setAutoSpeedAdjustment(enabled);
+      autoSpeedAdjustmentRef.current = enabled;
+      storage.updateSettings({ autoSpeedAdjustment: enabled }).catch(() => {});
+      if (enabled) {
+        triggerSpeedNotification('Adaptive WPM Enabled', 'up');
+      }
+    } catch (err) {
+      console.warn("Update auto speed adjustment error:", err);
     }
   };
 
   const toggleSplitView = useCallback((nextState?: boolean) => {
-    setShowSplitView(curr => {
-      const next = typeof nextState === 'boolean' ? nextState : !curr;
-      storage.updateSettings({ showSplitParagraphView: next });
-      return next;
-    });
+    try {
+      setShowSplitView(curr => {
+        const next = typeof nextState === 'boolean' ? nextState : !curr;
+        storage.updateSettings({ showSplitParagraphView: next }).catch(() => {});
+        return next;
+      });
+    } catch (err) {
+      console.warn("Toggle split view error:", err);
+    }
   }, []);
 
   const jumpToExactWord = useCallback((index: number) => {
-    const boundedIndex = Math.max(0, Math.min(words.length - 1, index));
-    currentWordIndexRef.current = boundedIndex;
-    setProgress(p => ({ ...p, currentWordIndex: boundedIndex }));
-    saveProgress();
+    try {
+      const boundedIndex = Math.max(0, Math.min(Math.max(0, words.length - 1), index));
+      currentWordIndexRef.current = boundedIndex;
+      setProgress(p => ({ ...p, currentWordIndex: boundedIndex }));
+      saveProgress();
+    } catch (err) {
+      console.warn("Jump to exact word error:", err);
+    }
   }, [words, saveProgress]);
 
   const openSettings = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsPlaying(false);
-    setShowSettings(true);
+    try {
+      setIsPlaying(false);
+      setShowSettings(true);
+    } catch (err) {
+      console.warn("Open settings error:", err);
+    }
   };
 
   // Keyboard controls
@@ -591,6 +830,12 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
       } else if (e.code === 'KeyV' || e.key === 'v' || e.key === 'V') {
         e.preventDefault();
         toggleSplitView();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        openNav(undefined, 'search');
+      } else if (!isPlaying && (e.key === '/' || e.code === 'KeyF' || e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        openNav(undefined, 'search');
       }
     };
     
@@ -599,18 +844,73 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
   }, [isPlaying, toggleCurrentBookmark, toggleSplitView]);
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center text-zinc-500">Loading document...</div>;
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-[#18181c] text-[#e8e8ec] p-6 select-none">
+        <div className="w-8 h-8 border-3 border-[#33333c] border-t-[#FCFD76] rounded-full animate-spin mb-4" />
+        <p className="text-sm text-[#9a9aa3] font-medium">Carregando documento...</p>
+      </div>
+    );
   }
 
-  const currentWord = words[progress.currentWordIndex] || '';
-  const previousWordText = progress.currentWordIndex > 0 ? words[progress.currentWordIndex - 1] : '';
-  const nextWordText = progress.currentWordIndex < words.length - 1 ? words[progress.currentWordIndex + 1] : '';
+  if (loadError) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-[#18181c] text-[#e8e8ec] p-6 select-none">
+        <div className="max-w-md w-full bg-[#222228] border border-[#33333c] rounded-[24px] p-6 sm:p-8 text-center shadow-xl">
+          <div className="w-12 h-12 rounded-[14px] bg-[#653a2c] text-[#F8B7A2] flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg sm:text-xl font-bold text-[#e8e8ec] mb-2">Falha ao abrir documento</h2>
+          <p className="text-xs sm:text-sm text-[#9a9aa3] mb-6 leading-relaxed">
+            {loadError}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={handleBack}
+              className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FCFD76] hover:bg-[#eef05a] text-[#212121] rounded-[12px] text-xs sm:text-sm font-bold transition-all cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Voltar à Biblioteca
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (words.length === 0) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-[#18181c] text-[#e8e8ec] p-6 select-none">
+        <div className="max-w-md w-full bg-[#222228] border border-[#33333c] rounded-[24px] p-6 sm:p-8 text-center shadow-xl">
+          <div className="w-12 h-12 rounded-[14px] bg-[#35325f] text-[#c5c5ef] flex items-center justify-center mx-auto mb-4">
+            <BookOpen className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg sm:text-xl font-bold text-[#e8e8ec] mb-2">Documento sem texto legível</h2>
+          <p className="text-xs sm:text-sm text-[#9a9aa3] mb-6 leading-relaxed">
+            Nenhuma palavra foi identificada neste arquivo ou o conteúdo está vazio.
+          </p>
+          <button
+            onClick={handleBack}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#FCFD76] hover:bg-[#eef05a] text-[#212121] rounded-[12px] text-xs sm:text-sm font-bold transition-all cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Voltar à Biblioteca
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const safeIndex = Math.max(0, Math.min(words.length - 1, progress.currentWordIndex || 0));
+  const currentWord = words[safeIndex] || '';
+  const previousWordText = safeIndex > 0 ? words[safeIndex - 1] : '';
+  const nextWordText = safeIndex < words.length - 1 ? words[safeIndex + 1] : '';
   const formattedWord = formatRSVPWord(currentWord);
-  const progressPercent = words.length > 0 ? (progress.currentWordIndex / Math.max(1, words.length - 1)) * 100 : 0;
-  const wordsLeft = Math.max(0, words.length - (progress.currentWordIndex + 1));
-  const minutesLeft = Math.ceil(wordsLeft / Math.max(1, progress.wpm));
-  const currentWordDisplayNum = Math.min(words.length, progress.currentWordIndex + 1);
-  const isCurrentWordBookmarked = bookmarks.some(b => b.wordIndex === progress.currentWordIndex);
+  const progressPercent = words.length > 0 ? (safeIndex / Math.max(1, words.length - 1)) * 100 : 0;
+  const wordsLeft = Math.max(0, words.length - (safeIndex + 1));
+  const safeWpm = typeof progress.wpm === 'number' && progress.wpm > 0 ? progress.wpm : 300;
+  const minutesLeft = Math.ceil(wordsLeft / safeWpm);
+  const currentWordDisplayNum = Math.min(words.length, safeIndex + 1);
+  const isCurrentWordBookmarked = bookmarks.some(b => b.wordIndex === safeIndex);
   const isNavPreviewBookmarked = bookmarks.some(b => b.wordIndex === navPreviewIndex);
 
   return (
@@ -1073,15 +1373,15 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
             
             <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
               
-              {/* Sidebar with Tabs (TOC and Bookmarks) */}
-              <div className="w-full md:w-72 border-b md:border-b-0 md:border-r border-[#33333c] bg-[#1e1e24] flex flex-col p-3 sm:p-4 overflow-y-auto max-h-48 md:max-h-none shrink-0">
+              {/* Sidebar with Tabs (TOC, Bookmarks and Search) */}
+              <div className="w-full md:w-80 border-b md:border-b-0 md:border-r border-[#33333c] bg-[#1e1e24] flex flex-col p-3 sm:p-4 overflow-y-auto max-h-56 md:max-h-none shrink-0">
                 {/* Tab Switcher */}
                 <div className="flex bg-[#18181c] p-1 rounded-[12px] border border-[#33333c] mb-3 shrink-0">
                   <button
                     type="button"
                     onClick={() => setActiveNavTab('toc')}
                     className={cn(
-                      "flex-1 py-1.5 px-2 rounded-[9px] text-xs font-bold transition-all text-center cursor-pointer",
+                      "flex-1 py-1.5 px-1.5 rounded-[9px] text-[11px] sm:text-xs font-bold transition-all text-center cursor-pointer whitespace-nowrap",
                       activeNavTab === 'toc'
                         ? "bg-[#35325f] text-[#c5c5ef]"
                         : "text-[#9a9aa3] hover:text-[#e8e8ec]"
@@ -1093,36 +1393,62 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
                     type="button"
                     onClick={() => setActiveNavTab('bookmarks')}
                     className={cn(
-                      "flex-1 py-1.5 px-2 rounded-[9px] text-xs font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer",
+                      "flex-1 py-1.5 px-1.5 rounded-[9px] text-[11px] sm:text-xs font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap",
                       activeNavTab === 'bookmarks'
                         ? "bg-[#35325f] text-[#c5c5ef]"
                         : "text-[#9a9aa3] hover:text-[#e8e8ec]"
                     )}
                   >
-                    <BookmarkIcon className="w-3 h-3" />
-                    Marcadores ({bookmarks.length})
+                    <BookmarkIcon className="w-3 h-3 shrink-0" />
+                    <span>Marcadores ({bookmarks.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveNavTab('search')}
+                    className={cn(
+                      "flex-1 py-1.5 px-1.5 rounded-[9px] text-[11px] sm:text-xs font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap",
+                      activeNavTab === 'search'
+                        ? "bg-[#35325f] text-[#c5c5ef]"
+                        : "text-[#9a9aa3] hover:text-[#e8e8ec]"
+                    )}
+                  >
+                    <Search className="w-3 h-3 shrink-0" />
+                    <span>Busca{searchQuery.trim().length >= 2 && searchResults.length > 0 ? ` (${searchResults.length})` : ''}</span>
                   </button>
                 </div>
 
                 {activeNavTab === 'toc' ? (
                   <div className="flex flex-col gap-1.5">
-                    {toc.map((item, i) => {
-                      const isActive = navPreviewIndex >= item.index && (i === toc.length - 1 || navPreviewIndex < toc[i+1].index);
-                      return (
-                        <button 
-                          key={i}
-                          onClick={() => setNavPreviewIndex(item.index)}
-                          className={cn(
-                            "text-left px-3 py-2 rounded-[10px] text-xs sm:text-sm transition-colors cursor-pointer", 
-                            isActive ? "bg-[#35325f] text-[#c5c5ef] font-bold" : "text-[#9a9aa3] hover:bg-[#2a2a32] hover:text-[#e8e8ec]"
-                          )}
-                        >
-                          {item.label}
-                        </button>
-                      );
-                    })}
+                    {toc.length === 0 ? (
+                      <div className="py-6 px-2 text-center text-xs text-[#9a9aa3] flex flex-col items-center">
+                        <BookOpen className="w-7 h-7 mb-2 opacity-40 text-[#9a9aa3]" />
+                        <p className="font-semibold text-[#c2c2c9] mb-1">Sem índice estruturado</p>
+                        <p className="leading-relaxed text-[11px] opacity-75">
+                          Use o controle deslizante ou a aba de busca por palavras para navegar rapidamente.
+                        </p>
+                      </div>
+                    ) : (
+                      toc.map((item, i) => {
+                        const isActive = navPreviewIndex >= item.index && (i === toc.length - 1 || navPreviewIndex < toc[i+1].index);
+                        return (
+                          <button 
+                            key={i}
+                            onClick={() => {
+                              setNavPreviewIndex(item.index);
+                              setExactWordInput(String(item.index + 1));
+                            }}
+                            className={cn(
+                              "text-left px-3 py-2 rounded-[10px] text-xs sm:text-sm transition-colors cursor-pointer", 
+                              isActive ? "bg-[#35325f] text-[#c5c5ef] font-bold" : "text-[#9a9aa3] hover:bg-[#2a2a32] hover:text-[#e8e8ec]"
+                            )}
+                          >
+                            {item.label}
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
-                ) : (
+                ) : activeNavTab === 'bookmarks' ? (
                   <div className="flex flex-col gap-2">
                     {bookmarks.length === 0 ? (
                       <div className="py-6 px-2 text-center text-xs text-[#9a9aa3] flex flex-col items-center">
@@ -1139,7 +1465,10 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
                         return (
                           <div
                             key={bm.id}
-                            onClick={() => setNavPreviewIndex(bm.wordIndex)}
+                            onClick={() => {
+                              setNavPreviewIndex(bm.wordIndex);
+                              setExactWordInput(String(bm.wordIndex + 1));
+                            }}
                             className={cn(
                               "group p-2.5 sm:p-3 rounded-[12px] border transition-all cursor-pointer flex flex-col gap-1 relative",
                               isSelected
@@ -1179,6 +1508,131 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
                         );
                       })
                     )}
+                  </div>
+                ) : (
+                  /* Search Tab Content */
+                  <div className="flex flex-col gap-2.5 flex-1 min-h-0">
+                    {/* Search Input Box */}
+                    <div className="relative shrink-0">
+                      <Search className="w-4 h-4 text-[#9a9aa3] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Buscar palavra ou frase..."
+                        className="w-full pl-9 pr-8 py-2 bg-[#18181c] border border-[#33333c] focus:border-[#FCFD76] rounded-[11px] text-xs sm:text-sm text-[#e8e8ec] placeholder:text-[#9a9aa3]/60 focus:outline-none transition-colors"
+                        autoFocus
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-[#9a9aa3] hover:text-[#e8e8ec] rounded-full cursor-pointer"
+                          title="Limpar busca"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Search Feedback & Controls */}
+                    {searchQuery.trim().length > 0 && searchQuery.trim().length < 2 && (
+                      <p className="text-[11px] text-[#9a9aa3] italic px-1 shrink-0">
+                        Digite pelo menos 2 caracteres para pesquisar.
+                      </p>
+                    )}
+
+                    {searchQuery.trim().length >= 2 && (
+                      <div className="flex items-center justify-between text-[11px] text-[#9a9aa3] px-1 shrink-0">
+                        <span className="font-medium text-[#c2c2c9]">
+                          {searchResults.length === 0 
+                            ? "Nenhuma ocorrência" 
+                            : `${searchResults.length}${searchResults.length >= 200 ? '+' : ''} ${searchResults.length === 1 ? 'ocorrência' : 'ocorrências'}`}
+                        </span>
+                        {searchResults.length > 0 && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={goToPrevSearchResult}
+                              className="px-1.5 py-0.5 rounded bg-[#18181c] border border-[#33333c] text-[#c2c2c9] hover:text-[#FCFD76] hover:border-[#FCFD76]/40 text-[10px] font-mono cursor-pointer transition-colors"
+                              title="Ocorrência anterior"
+                            >
+                              ▲ Ant
+                            </button>
+                            <button
+                              type="button"
+                              onClick={goToNextSearchResult}
+                              className="px-1.5 py-0.5 rounded bg-[#18181c] border border-[#33333c] text-[#c2c2c9] hover:text-[#FCFD76] hover:border-[#FCFD76]/40 text-[10px] font-mono cursor-pointer transition-colors"
+                              title="Próxima ocorrência"
+                            >
+                              ▼ Próx
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Search Results List */}
+                    <div className="flex-1 overflow-y-auto flex flex-col gap-1.5 pr-0.5">
+                      {searchQuery.trim().length === 0 ? (
+                        <div className="py-8 px-3 text-center text-xs text-[#9a9aa3] flex flex-col items-center justify-center">
+                          <Search className="w-8 h-8 mb-2.5 opacity-30 text-[#9a9aa3]" />
+                          <p className="font-semibold text-[#c2c2c9] mb-1">Pesquisa rápida por palavra</p>
+                          <p className="text-[11px] leading-relaxed opacity-75">
+                            Localize qualquer termo ou expressão no livro e pule diretamente para o trecho.
+                          </p>
+                        </div>
+                      ) : searchResults.length === 0 ? (
+                        <div className="py-8 px-3 text-center text-xs text-[#9a9aa3]">
+                          <p className="font-semibold text-[#c2c2c9] mb-1">Nenhum resultado</p>
+                          <p className="text-[11px] leading-relaxed opacity-75">
+                            Não encontramos correspondências para &ldquo;{searchQuery}&rdquo;.
+                          </p>
+                        </div>
+                      ) : (
+                        searchResults.map((res, idx) => {
+                          const isSelected = navPreviewIndex === res.index;
+                          const percent = words.length > 0 ? Math.round((res.index / Math.max(1, words.length - 1)) * 100) : 0;
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => {
+                                setNavPreviewIndex(res.index);
+                                setExactWordInput(String(res.index + 1));
+                              }}
+                              onDoubleClick={() => {
+                                setNavPreviewIndex(res.index);
+                                jumpToExactWord(res.index);
+                                setShowNav(false);
+                              }}
+                              className={cn(
+                                "group p-2.5 rounded-[12px] border transition-all cursor-pointer flex flex-col gap-1 text-left",
+                                isSelected
+                                  ? "bg-[#28273d] border-[#504a8a] text-[#e8e8ec]"
+                                  : "bg-[#18181c] border-[#33333c] hover:border-[#474182] text-[#c2c2c9]"
+                              )}
+                            >
+                              <div className="flex items-center justify-between text-xs font-mono font-bold">
+                                <span className={cn(isSelected ? "text-[#FCFD76]" : "text-[#c5c5ef]")}>
+                                  {percent}%
+                                </span>
+                                <span className="text-[10px] text-[#9a9aa3] font-sans font-normal">
+                                  Palavra {(res.index + 1).toLocaleString()}
+                                </span>
+                              </div>
+                              <p className="text-xs text-[#e8e8ec]/90 line-clamp-2 leading-relaxed">
+                                {res.snippet}
+                              </p>
+                              <div className="flex items-center justify-end text-[10px] text-[#9a9aa3] mt-0.5">
+                                <span className="group-hover:text-[#FCFD76] text-[10px] font-semibold transition-colors">
+                                  Visualizar &rarr;
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1253,10 +1707,15 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
                           const actualIndex = startIdx + i;
                           const isSelected = actualIndex === navPreviewIndex;
                           const hasBookmark = bookmarks.some(b => b.wordIndex === actualIndex);
+                          const isSearchMatch = searchQuery.trim().length >= 2 && normalizeSearchText(word).includes(normalizeSearchText(searchQuery.trim()));
+                          
                           return (
                             <span 
                               key={actualIndex}
-                              onClick={() => setNavPreviewIndex(actualIndex)}
+                              onClick={() => {
+                                setNavPreviewIndex(actualIndex);
+                                setExactWordInput(String(actualIndex + 1));
+                              }}
                               onDoubleClick={() => {
                                 setNavPreviewIndex(actualIndex);
                                 setTimeout(jumpToNavIndex, 0);
@@ -1264,12 +1723,14 @@ export default function Reader({ documentId, initialWordIndex, onBack }: ReaderP
                               className={cn(
                                 "cursor-pointer transition-colors duration-100 rounded-[4px] px-0.5 inline-block relative", 
                                 isSelected 
-                                  ? "text-[#212121] font-bold bg-[#FCFD76] px-1 mx-0.5" 
+                                  ? "text-[#212121] font-bold bg-[#FCFD76] px-1 mx-0.5 shadow-sm" 
+                                  : isSearchMatch
+                                  ? "bg-[#FCFD76]/30 text-[#FCFD76] font-semibold border-b border-[#FCFD76]"
                                   : hasBookmark
                                   ? "text-[#FCFD76] font-semibold underline decoration-[#FCFD76]/50 underline-offset-2 hover:bg-[#2a2a32]"
                                   : "hover:text-[#e8e8ec] hover:bg-[#2a2a32]"
                               )}
-                              title={hasBookmark ? "Marcador nesta palavra" : undefined}
+                              title={hasBookmark ? "Marcador nesta palavra" : isSearchMatch ? `Correspondência para "${searchQuery}"` : undefined}
                             >
                               {word}{' '}
                             </span>
