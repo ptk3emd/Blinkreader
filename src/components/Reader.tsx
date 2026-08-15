@@ -12,6 +12,7 @@ import { cn } from '../lib/utils';
 
 interface ReaderProps {
   documentId: string;
+  initialWordIndex?: number;
   onBack: () => void;
 }
 
@@ -55,7 +56,7 @@ const themeBgAlt: Record<Theme, string> = {
   oled: 'bg-[#18181c] border-[#33333c]'
 };
 
-export default function Reader({ documentId, onBack }: ReaderProps) {
+export default function Reader({ documentId, initialWordIndex, onBack }: ReaderProps) {
   const [words, setWords] = useState<string[]>([]);
   const [progress, setProgress] = useState<DocumentProgress>({ currentWordIndex: 0, wpm: 300 });
   const [isPlaying, setIsPlaying] = useState(false);
@@ -155,7 +156,9 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       if (docWords) setWords(docWords);
       
       const docProgress = await storage.getDocumentProgress(documentId);
-      const initialIndex = Math.max(0, Math.min(Math.max(0, totalWordsCount - 1), docProgress.currentWordIndex || 0));
+      const savedIndex = docProgress.currentWordIndex || 0;
+      const targetIndex = initialWordIndex !== undefined ? initialWordIndex : savedIndex;
+      const initialIndex = Math.max(0, Math.min(Math.max(0, totalWordsCount - 1), targetIndex));
       
       setProgress({
         currentWordIndex: initialIndex,
@@ -167,7 +170,10 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       setNavPreviewIndex(initialIndex);
       setExactWordInput(String(initialIndex + 1));
 
-      if (initialIndex > 0 && totalWordsCount > 0) {
+      if (initialWordIndex !== undefined && totalWordsCount > 0) {
+        const percent = Math.min(100, Math.round(((initialIndex + 1) / totalWordsCount) * 100));
+        triggerResumeToast(`Marcador carregado: palavra ${(initialIndex + 1).toLocaleString()} (${percent}%)`);
+      } else if (initialIndex > 0 && totalWordsCount > 0) {
         const percent = Math.min(100, Math.round(((initialIndex + 1) / totalWordsCount) * 100));
         triggerResumeToast(`Retomando da palavra ${(initialIndex + 1).toLocaleString()} de ${totalWordsCount.toLocaleString()} (${percent}%)`);
       }
@@ -194,7 +200,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       setLoading(false);
     };
     loadData();
-  }, [documentId, triggerResumeToast]);
+  }, [documentId, initialWordIndex, triggerResumeToast]);
 
   // Lifecycle listeners for instant crash-proof state persistence
   useEffect(() => {

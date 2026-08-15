@@ -31,6 +31,14 @@ export interface Bookmark {
   note?: string;
 }
 
+export interface DocumentBookmarkItem {
+  documentId: string;
+  documentTitle: string;
+  documentType: 'txt' | 'pdf' | 'epub' | 'mobi' | 'azw3';
+  totalWords: number;
+  bookmark: Bookmark;
+}
+
 export interface WpmHistory {
   timestamp: number;
   wpm: number;
@@ -141,6 +149,32 @@ export const storage = {
 
   async getBookmarks(docId: string): Promise<Bookmark[]> {
     return safeGet<Bookmark[]>(`doc_bookmarks_${docId}`, []);
+  },
+
+  async getAllBookmarks(): Promise<DocumentBookmarkItem[]> {
+    const docs = await this.getDocuments();
+    const result: DocumentBookmarkItem[] = [];
+    for (const doc of docs) {
+      const bms = await this.getBookmarks(doc.id);
+      for (const bm of bms) {
+        result.push({
+          documentId: doc.id,
+          documentTitle: doc.title,
+          documentType: doc.type,
+          totalWords: doc.totalWords,
+          bookmark: bm,
+        });
+      }
+    }
+    // Sort by timestamp descending by default
+    result.sort((a, b) => b.bookmark.timestamp - a.bookmark.timestamp);
+    return result;
+  },
+
+  async updateBookmarkNote(docId: string, bookmarkId: string, note: string): Promise<void> {
+    const bookmarks = await this.getBookmarks(docId);
+    const updated = bookmarks.map(b => b.id === bookmarkId ? { ...b, note } : b);
+    await safeSet(`doc_bookmarks_${docId}`, updated);
   },
 
   async addBookmark(docId: string, bookmark: Bookmark): Promise<void> {

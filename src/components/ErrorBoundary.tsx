@@ -20,35 +20,8 @@ export default class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  public override componentDidMount() {
-    window.addEventListener('error', this.handleWindowError);
-    window.addEventListener('unhandledrejection', this.handleUnhandledRejection);
-  }
-
-  public override componentWillUnmount() {
-    window.removeEventListener('error', this.handleWindowError);
-    window.removeEventListener('unhandledrejection', this.handleUnhandledRejection);
-  }
-
-  private handleWindowError = (event: ErrorEvent) => {
-    if (event.error) {
-      this.setState({ hasError: true, error: event.error });
-    } else if (event.message) {
-      this.setState({ hasError: true, error: new Error(event.message) });
-    }
-  };
-
-  private handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-    const reason = event.reason;
-    if (reason instanceof Error) {
-      this.setState({ hasError: true, error: reason });
-    } else if (typeof reason === 'string') {
-      this.setState({ hasError: true, error: new Error(reason) });
-    }
-  };
-
   public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error in BlinkReader:', error, errorInfo);
+    console.error('BlinkReader render error caught by ErrorBoundary:', error, errorInfo);
   }
 
   private handleReload = () => {

@@ -9,7 +9,7 @@ import { cn } from '../lib/utils';
 
 interface LibraryProps {
   onSelect: (id: string) => void;
-  onOpenDashboard: () => void;
+  onOpenDashboard: (tab?: 'metrics' | 'bookmarks') => void;
 }
 
 export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
@@ -189,7 +189,16 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
         
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           <button
-            onClick={onOpenDashboard}
+            onClick={() => onOpenDashboard('bookmarks')}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#222228] hover:bg-[#2a2a32] text-[#e8e8ec] border border-[#33333c] hover:border-[#FCFD76]/50 rounded-[12px] transition-all text-sm font-semibold shadow-none hover:-translate-y-0.5 cursor-pointer"
+            title="Marcadores e Trechos Salvos"
+          >
+            <Bookmark className="w-4 h-4 text-[#FCFD76] fill-current" />
+            <span>Marcadores</span>
+          </button>
+
+          <button
+            onClick={() => onOpenDashboard('metrics')}
             className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#222228] hover:bg-[#2a2a32] text-[#e8e8ec] border border-[#33333c] hover:border-[#474182] rounded-[12px] transition-all text-sm font-semibold shadow-none hover:-translate-y-0.5 cursor-pointer"
             title="Métricas de Desempenho"
           >
@@ -436,13 +445,18 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
                 {bookmarkCounts[doc.id] ? (
                   <>
                     <span>•</span>
-                    <span 
-                      className="flex items-center gap-1 text-[#FCFD76] font-semibold"
-                      title={`${bookmarkCounts[doc.id]} ${bookmarkCounts[doc.id] === 1 ? 'marcador salvo' : 'marcadores salvos'}`}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenDashboard('bookmarks');
+                      }}
+                      className="flex items-center gap-1 text-[#FCFD76] hover:text-[#eef05a] font-semibold hover:underline cursor-pointer"
+                      title={`${bookmarkCounts[doc.id]} ${bookmarkCounts[doc.id] === 1 ? 'marcador salvo' : 'marcadores salvos'} (clique para ver todos)`}
                     >
                       <Bookmark className="w-3 h-3 fill-current" />
                       <span>{bookmarkCounts[doc.id]}</span>
-                    </span>
+                    </button>
                   </>
                 ) : null}
               </div>
