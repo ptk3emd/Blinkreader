@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, ChangeEvent, MouseEvent } from 'react';
-import { Upload, BookOpen, Trash2, FileText, File as FileIcon, Clock, TrendingUp } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, ChangeEvent, MouseEvent } from 'react';
+import { Upload, BookOpen, Trash2, FileText, File as FileIcon, Clock, TrendingUp, Search, X, Bookmark } from 'lucide-react';
 import { storage, DocumentMeta } from '../lib/storage';
 import { parseTxt, parsePdf, parseEpub, parseMobi } from '../lib/parser';
 import { cn } from '../lib/utils';
@@ -11,6 +11,8 @@ interface LibraryProps {
 
 export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
   const [documents, setDocuments] = useState<DocumentMeta[]>([]);
+  const [bookmarkCounts, setBookmarkCounts] = useState<Record<string, number>>({});
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [pasteTitle, setPasteTitle] = useState('');
@@ -20,11 +22,28 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
   const loadDocs = async () => {
     const docs = await storage.getDocuments();
     setDocuments(docs.sort((a, b) => b.addedAt - a.addedAt));
+
+    const counts: Record<string, number> = {};
+    await Promise.all(
+      docs.map(async (d) => {
+        const bms = await storage.getBookmarks(d.id);
+        if (bms && bms.length > 0) {
+          counts[d.id] = bms.length;
+        }
+      })
+    );
+    setBookmarkCounts(counts);
   };
 
   useEffect(() => {
     loadDocs();
   }, []);
+
+  const filteredDocuments = useMemo(() => {
+    if (!searchQuery.trim()) return documents;
+    const q = searchQuery.toLowerCase().trim();
+    return documents.filter(doc => doc.title.toLowerCase().includes(q));
+  }, [documents, searchQuery]);
 
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -125,7 +144,7 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] text-[#e8e8ec]">
-              BlinkReader
+              Uma palavra
             </h1>
           </div>
           <p className="text-[#c2c2c9] text-sm sm:text-base font-medium">
@@ -174,9 +193,46 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
         </div>
       </header>
 
+      {/* Search and Filter Bar */}
+      {documents.length > 0 && (
+        <div className="mb-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9a9aa3] pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar documentos por título..."
+              className="w-full bg-[#18181c] border border-[#33333c] focus:border-[#FCFD76] rounded-[12px] pl-10 pr-10 py-2.5 text-sm text-[#e8e8ec] placeholder:text-[#9a9aa3] focus:outline-none transition-colors"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#9a9aa3] hover:text-[#e8e8ec] hover:bg-[#2a2a32] rounded-[6px] transition-colors cursor-pointer"
+                title="Limpar busca"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="text-xs text-[#9a9aa3] font-mono px-1 flex items-center justify-between sm:justify-end gap-2">
+            {searchQuery.trim() ? (
+              <span>
+                {filteredDocuments.length} de {documents.length} {documents.length === 1 ? 'documento' : 'documentos'}
+              </span>
+            ) : (
+              <span>
+                {documents.length} {documents.length === 1 ? 'documento salvo' : 'documentos salvos'}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Document Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        {documents.map(doc => {
+        {filteredDocuments.map(doc => {
           const typeColors = {
             pdf: 'bg-[#653a2c] text-[#F8B7A2]',
             epub: 'bg-[#35325f] text-[#D7D7F4]',
@@ -218,10 +274,40 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
                 </span>
                 <span>•</span>
                 <span>{doc.totalWords.toLocaleString()} palavras</span>
+                {bookmarkCounts[doc.id] ? (
+                  <>
+                    <span>•</span>
+                    <span 
+                      className="flex items-center gap-1 text-[#FCFD76] font-semibold"
+                      title={`${bookmarkCounts[doc.id]} ${bookmarkCounts[doc.id] === 1 ? 'marcador salvo' : 'marcadores salvos'}`}
+                    >
+                      <Bookmark className="w-3 h-3 fill-current" />
+                      <span>{bookmarkCounts[doc.id]}</span>
+                    </span>
+                  </>
+                ) : null}
               </div>
             </div>
           );
         })}
+
+        {documents.length > 0 && filteredDocuments.length === 0 && (
+          <div className="col-span-full py-16 px-6 text-center border border-dashed border-[#33333c] bg-[#1e1e24]/60 rounded-[24px] text-[#9a9aa3] flex flex-col items-center">
+            <div className="w-14 h-14 rounded-[16px] bg-[#222228] border border-[#33333c] flex items-center justify-center mb-4 text-[#9a9aa3]">
+              <Search className="w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-bold mb-1.5 text-[#e8e8ec]">Nenhum documento encontrado</h3>
+            <p className="text-sm text-[#9a9aa3] max-w-md mb-4">
+              Nenhum título corresponde ao termo &quot;{searchQuery}&quot;.
+            </p>
+            <button
+              onClick={() => setSearchQuery('')}
+              className="px-4 py-2 bg-[#222228] hover:bg-[#2a2a32] text-[#e8e8ec] border border-[#33333c] rounded-[10px] text-xs font-semibold transition-colors cursor-pointer"
+            >
+              Limpar busca
+            </button>
+          </div>
+        )}
 
         {documents.length === 0 && !loading && (
           <div className="col-span-full py-16 px-6 text-center border border-dashed border-[#33333c] bg-[#1e1e24]/60 rounded-[24px] text-[#9a9aa3] flex flex-col items-center">

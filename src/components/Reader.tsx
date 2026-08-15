@@ -1,12 +1,28 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Play, Pause, List, ChevronLeft, ChevronRight, Minus, Plus, X, Settings, Zap } from 'lucide-react';
-import { storage, DocumentProgress, Theme } from '../lib/storage';
+import { 
+  ArrowLeft, Play, Pause, List, ChevronLeft, ChevronRight, 
+  Minus, Plus, X, Settings, Zap, Bookmark as BookmarkIcon, 
+  BookmarkCheck, BookmarkPlus, Trash2 
+} from 'lucide-react';
+import { storage, DocumentProgress, Theme, Bookmark } from '../lib/storage';
 import { formatRSVPWord, RSVPWord } from '../lib/rsvp';
 import { cn } from '../lib/utils';
 
 interface ReaderProps {
   documentId: string;
   onBack: () => void;
+}
+
+function formatBookmarkDate(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'Agora';
+  if (minutes < 60) return `há ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `há ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `há ${days} d`;
+  return new Date(timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
 }
 
 const themeClasses: Record<Theme, string> = {
@@ -51,6 +67,21 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
   const [showContextWords, setShowContextWords] = useState<boolean>(true);
   const [autoSpeedAdjustment, setAutoSpeedAdjustment] = useState<boolean>(true);
   const [speedNotification, setSpeedNotification] = useState<{ message: string; type: 'up' | 'down'; id: number } | null>(null);
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [activeNavTab, setActiveNavTab] = useState<'toc' | 'bookmarks'>('toc');
+  const [bookmarkToast, setBookmarkToast] = useState<{ message: string; id: number } | null>(null);
+  const bookmarkToastTimeoutRef = useRef<number | null>(null);
+
+  const triggerBookmarkToast = useCallback((message: string) => {
+    if (bookmarkToastTimeoutRef.current) {
+      clearTimeout(bookmarkToastTimeoutRef.current);
+    }
+    const id = Date.now();
+    setBookmarkToast({ message, id });
+    bookmarkToastTimeoutRef.current = window.setTimeout(() => {
+      setBookmarkToast(curr => (curr?.id === id ? null : curr));
+    }, 2400);
+  }, []);
   
   const timerRef = useRef<number | null>(null);
   const currentWordIndexRef = useRef(0);
@@ -103,6 +134,9 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
         setAutoSpeedAdjustment(userSettings.autoSpeedAdjustment);
         autoSpeedAdjustmentRef.current = userSettings.autoSpeedAdjustment;
       }
+
+      const docBookmarks = await storage.getBookmarks(documentId);
+      setBookmarks(docBookmarks);
 
       setLoading(false);
     };
@@ -256,6 +290,15 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     saveProgress();
   };
 
+  const setWpmDirectly = (value: number) => {
+    focusStreakWordsRef.current = 0;
+    wordsInCurrentPlaySessionRef.current = 0;
+    const newWpm = Math.max(50, Math.min(1000, Math.round(value)));
+    wpmRef.current = newWpm;
+    setProgress(p => ({ ...p, wpm: newWpm }));
+    saveProgress();
+  };
+
   const jumpWords = (delta: number) => {
     let newIndex = currentWordIndexRef.current + delta;
     newIndex = Math.max(0, Math.min(words.length - 1, newIndex));
@@ -287,7 +330,53 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     currentWordIndexRef.current = navPreviewIndex;
     setProgress(p => ({ ...p, currentWordIndex: navPreviewIndex }));
     setShowNav(false);
+    saveProgress();
   };
+
+  const jumpToBookmarkIndex = (index: number) => {
+    currentWordIndexRef.current = index;
+    setProgress(p => ({ ...p, currentWordIndex: index }));
+    saveProgress();
+    setShowNav(false);
+    triggerBookmarkToast(`Saltou para o marcador na palavra ${(index + 1).toLocaleString()}`);
+  };
+
+  const toggleBookmarkAtIndex = useCallback(async (index: number) => {
+    const existing = bookmarks.find(b => b.wordIndex === index);
+    if (existing) {
+      await storage.removeBookmark(documentId, existing.id);
+      setBookmarks(prev => prev.filter(b => b.id !== existing.id));
+      triggerBookmarkToast(`Marcador removido (palavra ${(index + 1).toLocaleString()})`);
+    } else {
+      const start = Math.max(0, index - 2);
+      const end = Math.min(words.length, index + 6);
+      const snippet = words.slice(start, end).join(' ');
+      const newBm: Bookmark = {
+        id: `bm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        wordIndex: index,
+        snippet: snippet || `Palavra ${index + 1}`,
+        timestamp: Date.now()
+      };
+      await storage.addBookmark(documentId, newBm);
+      setBookmarks(prev => {
+        const next = [...prev.filter(b => b.wordIndex !== index), newBm];
+        next.sort((a, b) => a.wordIndex - b.wordIndex);
+        return next;
+      });
+      triggerBookmarkToast(`Marcador salvo na palavra ${(index + 1).toLocaleString()}`);
+    }
+  }, [bookmarks, documentId, words, triggerBookmarkToast]);
+
+  const toggleCurrentBookmark = useCallback(() => {
+    toggleBookmarkAtIndex(currentWordIndexRef.current);
+  }, [toggleBookmarkAtIndex]);
+
+  const deleteBookmark = useCallback(async (bookmarkId: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    await storage.removeBookmark(documentId, bookmarkId);
+    setBookmarks(prev => prev.filter(b => b.id !== bookmarkId));
+    triggerBookmarkToast('Marcador excluído');
+  }, [documentId, triggerBookmarkToast]);
 
   const handleProgressSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
@@ -347,6 +436,12 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
   // Keyboard controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is typing in an input field
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        return;
+      }
+
       if (e.code === 'Space') {
         e.preventDefault();
         togglePlay();
@@ -362,12 +457,15 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       } else if (e.code === 'ArrowRight') {
         e.preventDefault();
         jumpWords(10);
+      } else if (e.code === 'KeyB' || e.key === 'b' || e.key === 'B') {
+        e.preventDefault();
+        toggleCurrentBookmark();
       }
     };
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying]);
+  }, [isPlaying, toggleCurrentBookmark]);
 
   if (loading) {
     return <div className="flex h-screen items-center justify-center text-zinc-500">Loading document...</div>;
@@ -381,6 +479,8 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
   const wordsLeft = Math.max(0, words.length - (progress.currentWordIndex + 1));
   const minutesLeft = Math.ceil(wordsLeft / Math.max(1, progress.wpm));
   const currentWordDisplayNum = Math.min(words.length, progress.currentWordIndex + 1);
+  const isCurrentWordBookmarked = bookmarks.some(b => b.wordIndex === progress.currentWordIndex);
+  const isNavPreviewBookmarked = bookmarks.some(b => b.wordIndex === navPreviewIndex);
 
   return (
     <div className={cn("flex flex-col h-screen overflow-hidden select-none", themeClasses[theme])} onClick={togglePlay}>
@@ -393,7 +493,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
         />
       </div>
 
-      {/* Floating Speed Auto-Adjustment Notification */}
+      {/* Floating Speed & Bookmark Notifications */}
       {speedNotification && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 animate-in fade-in slide-in-from-top-3">
           <div className={cn(
@@ -404,6 +504,15 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
           )}>
             <Zap className={cn("w-3.5 h-3.5", speedNotification.type === 'up' ? "text-[#5fa777] fill-[#5fa777]" : "text-[#F8B7A2] fill-[#F8B7A2]")} />
             <span>{speedNotification.message}</span>
+          </div>
+        </div>
+      )}
+
+      {bookmarkToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 animate-in fade-in slide-in-from-top-3">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-[30px] text-xs sm:text-sm font-semibold shadow-[0_10px_30px_-18px_rgba(0,0,0,0.45)] backdrop-blur-md border bg-[#222228] text-[#FCFD76] border-[#514a19]">
+            <BookmarkCheck className="w-4 h-4 text-[#FCFD76]" />
+            <span>{bookmarkToast.message}</span>
           </div>
         </div>
       )}
@@ -424,21 +533,21 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
           <span className="font-semibold text-xs sm:text-sm hidden sm:inline">Biblioteca</span>
         </button>
         
-        <div className="flex items-center gap-2 sm:gap-3 px-3.5 py-1.5 rounded-[30px] border border-[#33333c] bg-[#222228] order-3 w-full sm:w-auto sm:order-none justify-center">
+        <div className="flex items-center gap-2 sm:gap-3 px-3.5 sm:px-4 py-1.5 rounded-[30px] border border-[#33333c] bg-[#222228] order-3 w-full sm:w-auto sm:order-none justify-center">
           <button 
             onClick={(e) => { e.stopPropagation(); updateWpm(-25); }} 
-            className="p-1 text-[#9a9aa3] hover:text-[#e8e8ec] transition-colors cursor-pointer" 
+            className="p-1 text-[#9a9aa3] hover:text-[#e8e8ec] transition-colors cursor-pointer shrink-0" 
             title="Reduzir velocidade (-25 WPM)"
           >
             <Minus className="w-4 h-4" />
           </button>
           
-          <div className="flex items-center gap-1.5 font-mono font-bold text-sm sm:text-base text-[#e8e8ec]">
-            <span>{progress.wpm}</span>
+          <div className="flex items-center gap-1.5 font-mono font-bold text-sm sm:text-base text-[#e8e8ec] shrink-0">
+            <span className="min-w-[3ch] text-right">{progress.wpm}</span>
             <span className="text-xs text-[#9a9aa3] font-sans font-medium">WPM</span>
             {autoSpeedAdjustment && (
               <span 
-                className="ml-1 text-[10px] uppercase font-extrabold tracking-wider px-2 py-0.5 rounded-[30px] bg-[#35325f] text-[#c5c5ef] flex items-center gap-1"
+                className="ml-0.5 text-[9px] uppercase font-extrabold tracking-wider px-1.5 py-0.5 rounded-[30px] bg-[#35325f] text-[#c5c5ef] hidden md:inline-flex items-center gap-0.5"
                 title="Ritmo adaptativo ativo: ajusta velocidade conforme foco e pausas"
               >
                 <Zap className="w-2.5 h-2.5 fill-current" />
@@ -447,9 +556,27 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
             )}
           </div>
 
+          {/* Dynamic WPM Slider */}
+          <div className="flex items-center px-1 sm:px-1.5">
+            <input 
+              type="range" 
+              min={50} 
+              max={1000} 
+              step={10}
+              value={progress.wpm} 
+              onChange={(e) => {
+                e.stopPropagation();
+                setWpmDirectly(Number(e.target.value));
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-20 xs:w-24 sm:w-28 md:w-36 accent-[#FCFD76] cursor-pointer h-1.5 bg-[#3a3a44] rounded-lg appearance-none"
+              title={`Velocidade de leitura: ${progress.wpm} WPM`}
+            />
+          </div>
+
           <button 
             onClick={(e) => { e.stopPropagation(); updateWpm(25); }} 
-            className="p-1 text-[#9a9aa3] hover:text-[#e8e8ec] transition-colors cursor-pointer" 
+            className="p-1 text-[#9a9aa3] hover:text-[#e8e8ec] transition-colors cursor-pointer shrink-0" 
             title="Aumentar velocidade (+25 WPM)"
           >
             <Plus className="w-4 h-4" />
@@ -457,6 +584,35 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Bookmark Button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); toggleCurrentBookmark(); }}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2 rounded-[11px] border transition-all cursor-pointer",
+              isCurrentWordBookmarked
+                ? "bg-[#514a19] text-[#FCFD76] border-[#FCFD76]/60 shadow-[0_0_12px_rgba(252,253,118,0.2)]"
+                : "text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border-[#33333c]"
+            )}
+            title={isCurrentWordBookmarked ? "Remover marcador desta palavra (Atalho: B)" : "Adicionar marcador nesta palavra (Atalho: B)"}
+          >
+            {isCurrentWordBookmarked ? (
+              <BookmarkCheck className="w-4 h-4 text-[#FCFD76]" />
+            ) : (
+              <BookmarkIcon className="w-4 h-4" />
+            )}
+            <span className="font-semibold text-xs sm:text-sm hidden sm:inline">
+              {isCurrentWordBookmarked ? "Marcado" : "Marcar"}
+            </span>
+            {bookmarks.length > 0 && (
+              <span className={cn(
+                "text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full ml-0.5",
+                isCurrentWordBookmarked ? "bg-[#FCFD76] text-[#212121]" : "bg-[#35325f] text-[#c5c5ef]"
+              )}>
+                {bookmarks.length}
+              </span>
+            )}
+          </button>
+
           <button 
             onClick={openSettings}
             className="p-2.5 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] rounded-[11px] transition-all cursor-pointer"
@@ -467,7 +623,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
           <button 
             onClick={openNav}
             className="flex items-center gap-2 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] px-3 py-2 rounded-[11px] transition-all cursor-pointer"
-            title="Navegar no texto"
+            title="Navegar no texto e marcadores"
           >
             <span className="font-semibold text-xs sm:text-sm hidden sm:inline">Navegar</span>
             <List className="w-4 h-4" />
@@ -540,7 +696,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
           </span>
         </div>
 
-        {/* Interactive Progress Track */}
+        {/* Interactive Progress Track with Bookmark Markers */}
         <div 
           className="group relative h-2.5 sm:h-3 rounded-full cursor-pointer transition-all hover:h-3.5 flex items-center bg-[#3a3a44] border border-[#33333c]"
           onClick={handleProgressSeek}
@@ -554,6 +710,24 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
             {/* Scrubber thumb */}
             <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3.5 h-3.5 rounded-full bg-[#FCFD76] shadow-md border-2 border-[#18181c] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
           </div>
+
+          {/* Bookmark Markers along track */}
+          {bookmarks.map((bm) => {
+            const bmPercent = words.length > 0 ? (bm.wordIndex / Math.max(1, words.length - 1)) * 100 : 0;
+            return (
+              <button
+                key={bm.id}
+                type="button"
+                style={{ left: `${bmPercent}%` }}
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-[#FCFD76] shadow-[0_0_6px_rgba(252,253,118,0.9)] border border-[#18181c] z-10 transition-transform hover:scale-175 cursor-pointer focus:outline-none"
+                title={`Marcador: Palavra ${(bm.wordIndex + 1).toLocaleString()} (${Math.round(bmPercent)}%) - "${bm.snippet}"`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  jumpToBookmarkIndex(bm.wordIndex);
+                }}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -593,20 +767,20 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       {/* Navigation Modal */}
       {showNav && (
         <div 
-          className="fixed inset-0 z-50 bg-[rgba(20,20,40,0.6)] backdrop-blur-sm flex flex-col p-4 md:p-10 animate-in fade-in"
+          className="fixed inset-0 z-50 bg-[rgba(20,20,40,0.6)] backdrop-blur-sm flex flex-col p-3 sm:p-4 md:p-10 animate-in fade-in"
           onClick={(e) => { e.stopPropagation(); setShowNav(false); }}
         >
           <div 
             className="flex flex-col bg-[#222228] border border-[#33333c] rounded-[24px] w-full max-w-5xl mx-auto h-full overflow-hidden shadow-[0_18px_40px_-22px_rgba(0,0,0,0.55)] relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-5 sm:p-6 border-b border-[#33333c]">
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-[#33333c]">
               <div>
                 <span className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#9a9aa3]">
                   Navegação
                 </span>
-                <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-[#e8e8ec]">
-                  Localizar no Texto
+                <h2 className="text-lg sm:text-2xl font-extrabold tracking-tight text-[#e8e8ec]">
+                  Localizar no Texto & Marcadores
                 </h2>
               </div>
               <button 
@@ -617,33 +791,121 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
               </button>
             </div>
             
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
               
-              {/* TOC Sidebar */}
-              <div className="hidden md:flex w-64 border-r border-[#33333c] bg-[#1e1e24] flex-col p-4 overflow-y-auto">
-                <h3 className="text-[11px] font-extrabold text-[#9a9aa3] uppercase tracking-[0.12em] mb-4 px-2">Capítulos / Seções</h3>
-                <div className="flex flex-col gap-1.5">
-                  {toc.map((item, i) => {
-                    const isActive = navPreviewIndex >= item.index && (i === toc.length - 1 || navPreviewIndex < toc[i+1].index);
-                    return (
-                      <button 
-                        key={i}
-                        onClick={() => setNavPreviewIndex(item.index)}
-                        className={cn(
-                          "text-left px-3 py-2 rounded-[10px] text-xs sm:text-sm transition-colors cursor-pointer", 
-                          isActive ? "bg-[#35325f] text-[#c5c5ef] font-bold" : "text-[#9a9aa3] hover:bg-[#2a2a32] hover:text-[#e8e8ec]"
-                        )}
-                      >
-                        {item.label}
-                      </button>
-                    );
-                  })}
+              {/* Sidebar with Tabs (TOC and Bookmarks) */}
+              <div className="w-full md:w-72 border-b md:border-b-0 md:border-r border-[#33333c] bg-[#1e1e24] flex flex-col p-3 sm:p-4 overflow-y-auto max-h-48 md:max-h-none shrink-0">
+                {/* Tab Switcher */}
+                <div className="flex bg-[#18181c] p-1 rounded-[12px] border border-[#33333c] mb-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveNavTab('toc')}
+                    className={cn(
+                      "flex-1 py-1.5 px-2 rounded-[9px] text-xs font-bold transition-all text-center cursor-pointer",
+                      activeNavTab === 'toc'
+                        ? "bg-[#35325f] text-[#c5c5ef]"
+                        : "text-[#9a9aa3] hover:text-[#e8e8ec]"
+                    )}
+                  >
+                    Capítulos ({toc.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveNavTab('bookmarks')}
+                    className={cn(
+                      "flex-1 py-1.5 px-2 rounded-[9px] text-xs font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer",
+                      activeNavTab === 'bookmarks'
+                        ? "bg-[#35325f] text-[#c5c5ef]"
+                        : "text-[#9a9aa3] hover:text-[#e8e8ec]"
+                    )}
+                  >
+                    <BookmarkIcon className="w-3 h-3" />
+                    Marcadores ({bookmarks.length})
+                  </button>
                 </div>
+
+                {activeNavTab === 'toc' ? (
+                  <div className="flex flex-col gap-1.5">
+                    {toc.map((item, i) => {
+                      const isActive = navPreviewIndex >= item.index && (i === toc.length - 1 || navPreviewIndex < toc[i+1].index);
+                      return (
+                        <button 
+                          key={i}
+                          onClick={() => setNavPreviewIndex(item.index)}
+                          className={cn(
+                            "text-left px-3 py-2 rounded-[10px] text-xs sm:text-sm transition-colors cursor-pointer", 
+                            isActive ? "bg-[#35325f] text-[#c5c5ef] font-bold" : "text-[#9a9aa3] hover:bg-[#2a2a32] hover:text-[#e8e8ec]"
+                          )}
+                        >
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {bookmarks.length === 0 ? (
+                      <div className="py-6 px-2 text-center text-xs text-[#9a9aa3] flex flex-col items-center">
+                        <BookmarkIcon className="w-7 h-7 mb-2 opacity-40 text-[#9a9aa3]" />
+                        <p className="font-semibold text-[#c2c2c9] mb-1">Nenhum marcador salvo</p>
+                        <p className="leading-relaxed text-[11px] opacity-75">
+                          Pressione a tecla <kbd className="px-1 py-0.5 rounded bg-[#18181c] border border-[#33333c] text-[#FCFD76] font-mono">B</kbd> durante a leitura ou use o botão abaixo para marcar esta posição.
+                        </p>
+                      </div>
+                    ) : (
+                      bookmarks.map((bm) => {
+                        const isSelected = navPreviewIndex === bm.wordIndex;
+                        const bmPercent = words.length > 0 ? Math.round((bm.wordIndex / Math.max(1, words.length - 1)) * 100) : 0;
+                        return (
+                          <div
+                            key={bm.id}
+                            onClick={() => setNavPreviewIndex(bm.wordIndex)}
+                            className={cn(
+                              "group p-2.5 sm:p-3 rounded-[12px] border transition-all cursor-pointer flex flex-col gap-1 relative",
+                              isSelected
+                                ? "bg-[#28273d] border-[#504a8a] text-[#e8e8ec]"
+                                : "bg-[#18181c] border-[#33333c] hover:border-[#474182] text-[#c2c2c9]"
+                            )}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-[#FCFD76]">
+                                <BookmarkIcon className="w-3 h-3 fill-current" />
+                                <span>{bmPercent}%</span>
+                                <span className="text-[10px] text-[#9a9aa3] font-normal font-sans">
+                                  • Palavra {(bm.wordIndex + 1).toLocaleString()}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => deleteBookmark(bm.id, e)}
+                                className="opacity-0 group-hover:opacity-100 p-1 text-[#9a9aa3] hover:text-[#ff6b63] hover:bg-[#ff6b63]/10 rounded-[6px] transition-all cursor-pointer"
+                                title="Excluir marcador"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+
+                            <p className="text-xs italic text-[#e8e8ec]/90 line-clamp-2 leading-relaxed">
+                              &ldquo;{bm.snippet}&rdquo;
+                            </p>
+
+                            <div className="flex items-center justify-between text-[10px] text-[#9a9aa3] mt-0.5">
+                              <span>{formatBookmarkDate(bm.timestamp)}</span>
+                              <span className="group-hover:text-[#FCFD76] text-[10px] font-semibold transition-colors">
+                                Visualizar &rarr;
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Right side Text Preview & Scrubber */}
               <div className="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden">
-                <div className="mb-4 sm:mb-6 flex flex-col gap-2">
+                <div className="mb-3 sm:mb-5 flex flex-col gap-2">
                   <div className="flex justify-between text-xs font-mono text-[#9a9aa3]">
                     <span>0%</span>
                     <span className="text-[#FCFD76] font-bold font-mono">{Math.round((navPreviewIndex / Math.max(1, words.length - 1)) * 100)}%</span>
@@ -657,12 +919,12 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                     onChange={(e) => setNavPreviewIndex(Number(e.target.value))}
                     className="w-full accent-[#FCFD76] cursor-pointer h-2 bg-[#3a3a44] rounded-lg appearance-none"
                   />
-                  <div className="text-center text-xs text-[#9a9aa3] mt-1 font-mono">
-                    Palavra {navPreviewIndex.toLocaleString()} de {words.length.toLocaleString()}
+                  <div className="text-center text-xs text-[#9a9aa3] mt-0.5 font-mono">
+                    Palavra {(navPreviewIndex + 1).toLocaleString()} de {words.length.toLocaleString()}
                   </div>
                 </div>
 
-                <div className="flex-1 bg-[#18181c] rounded-[16px] p-5 sm:p-6 overflow-y-auto text-sm sm:text-base leading-relaxed text-[#c2c2c9] border border-[#33333c]">
+                <div className="flex-1 bg-[#18181c] rounded-[16px] p-4 sm:p-6 overflow-y-auto text-sm sm:text-base leading-relaxed text-[#c2c2c9] border border-[#33333c]">
                   {(() => {
                     const startIdx = Math.max(0, navPreviewIndex - 100);
                     const endIdx = Math.min(words.length, navPreviewIndex + 300);
@@ -674,6 +936,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                         {previewWords.map((word, i) => {
                           const actualIndex = startIdx + i;
                           const isSelected = actualIndex === navPreviewIndex;
+                          const hasBookmark = bookmarks.some(b => b.wordIndex === actualIndex);
                           return (
                             <span 
                               key={actualIndex}
@@ -683,11 +946,14 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                                 setTimeout(jumpToNavIndex, 0);
                               }}
                               className={cn(
-                                "cursor-pointer transition-colors duration-100 rounded-[4px] px-0.5", 
+                                "cursor-pointer transition-colors duration-100 rounded-[4px] px-0.5 inline-block relative", 
                                 isSelected 
                                   ? "text-[#212121] font-bold bg-[#FCFD76] px-1 mx-0.5" 
+                                  : hasBookmark
+                                  ? "text-[#FCFD76] font-semibold underline decoration-[#FCFD76]/50 underline-offset-2 hover:bg-[#2a2a32]"
                                   : "hover:text-[#e8e8ec] hover:bg-[#2a2a32]"
                               )}
+                              title={hasBookmark ? "Marcador nesta palavra" : undefined}
                             >
                               {word}{' '}
                             </span>
@@ -701,10 +967,34 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
               </div>
             </div>
 
-            <div className="p-4 sm:p-6 border-t border-[#33333c] bg-[#1e1e24] flex justify-end">
+            {/* Navigation Modal Footer */}
+            <div className="p-3 sm:p-5 border-t border-[#33333c] bg-[#1e1e24] flex flex-col sm:flex-row items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => toggleBookmarkAtIndex(navPreviewIndex)}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-4 py-2.5 rounded-[12px] text-xs sm:text-sm font-semibold border transition-all w-full sm:w-auto cursor-pointer",
+                  isNavPreviewBookmarked
+                    ? "bg-[#514a19]/50 text-[#FCFD76] border-[#FCFD76]/50 hover:bg-[#514a19]/70"
+                    : "bg-[#222228] text-[#c2c2c9] hover:text-[#e8e8ec] hover:bg-[#2a2a32] border-[#33333c]"
+                )}
+              >
+                {isNavPreviewBookmarked ? (
+                  <>
+                    <BookmarkCheck className="w-4 h-4 text-[#FCFD76]" />
+                    <span>Marcador salvo nesta posição (remover)</span>
+                  </>
+                ) : (
+                  <>
+                    <BookmarkPlus className="w-4 h-4 text-[#FCFD76]" />
+                    <span>Salvar marcador nesta posição</span>
+                  </>
+                )}
+              </button>
+
               <button 
                 onClick={jumpToNavIndex}
-                className="px-6 py-2.5 sm:px-8 bg-[#FCFD76] hover:bg-[#eef05a] text-[#212121] rounded-[12px] font-bold transition-all hover:-translate-y-0.5 shadow-none w-full sm:w-auto text-center cursor-pointer"
+                className="px-6 py-2.5 sm:px-8 bg-[#FCFD76] hover:bg-[#eef05a] text-[#212121] rounded-[12px] font-bold transition-all hover:-translate-y-0.5 shadow-none w-full sm:w-auto text-center cursor-pointer text-xs sm:text-sm"
               >
                 Continuar a partir daqui
               </button>
@@ -792,6 +1082,41 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                   </div>
                   <span className="text-xs font-bold text-[#e8e8ec]">OLED Profundo</span>
                 </button>
+              </div>
+
+              <h3 className="text-[11px] font-extrabold text-[#9a9aa3] uppercase tracking-[0.12em] mb-3">Velocidade de Leitura (WPM)</h3>
+              <div className="bg-[#18181c] border border-[#33333c] rounded-[14px] p-4 mb-6">
+                <div className="flex items-center justify-between text-[#9a9aa3] mb-3 text-xs font-semibold">
+                  <span>50 WPM</span>
+                  <span className="font-mono text-[#FCFD76] font-bold text-sm">{progress.wpm} WPM</span>
+                  <span>1000 WPM</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="50" 
+                  max="1000" 
+                  step="10"
+                  value={progress.wpm}
+                  onChange={(e) => setWpmDirectly(Number(e.target.value))}
+                  className="w-full accent-[#FCFD76] cursor-pointer h-2 bg-[#3a3a44] rounded-lg appearance-none mb-3"
+                />
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 pt-1">
+                  {[150, 250, 350, 450, 600, 800].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setWpmDirectly(preset)}
+                      className={cn(
+                        "py-1 px-1.5 rounded-[8px] text-xs font-mono font-semibold border transition-all cursor-pointer text-center",
+                        progress.wpm === preset
+                          ? "bg-[#FCFD76] text-[#212121] border-[#FCFD76] font-bold"
+                          : "bg-[#222228] text-[#c2c2c9] border-[#33333c] hover:border-[#FCFD76]/50"
+                      )}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <h3 className="text-[11px] font-extrabold text-[#9a9aa3] uppercase tracking-[0.12em] mb-3">Tamanho da Fonte</h3>

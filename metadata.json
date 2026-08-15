@@ -1,6 +1,6 @@
 {
-  "name": "BlinkReader",
-  "description": "Minimalist ultra-fast speed reading app focusing on minimizing eye movement with PDF and EPUB support.",
+  "name": "Uma palavra",
+  "description": "Aplicativo minimalista de leitura dinâmica RSVP com foco em uma palavra por vez.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

@@ -22,6 +22,14 @@ export interface UserSettings {
   autoSpeedAdjustment?: boolean; // Dynamically adjusts WPM based on focus streak and rewind/pause frequency
 }
 
+export interface Bookmark {
+  id: string;
+  wordIndex: number;
+  snippet: string;
+  timestamp: number;
+  note?: string;
+}
+
 export interface WpmHistory {
   timestamp: number;
   wpm: number;
@@ -83,6 +91,33 @@ export const storage = {
     await safeSet('documents', docs.filter(d => d.id !== id));
     await safeRemove(`doc_words_${id}`);
     await safeRemove(`doc_progress_${id}`);
+    await safeRemove(`doc_bookmarks_${id}`);
+  },
+
+  async getBookmarks(docId: string): Promise<Bookmark[]> {
+    return safeGet<Bookmark[]>(`doc_bookmarks_${docId}`, []);
+  },
+
+  async addBookmark(docId: string, bookmark: Bookmark): Promise<void> {
+    const bookmarks = await this.getBookmarks(docId);
+    // Prevent exact duplicate index bookmarks or replace
+    const filtered = bookmarks.filter(b => b.wordIndex !== bookmark.wordIndex);
+    filtered.push(bookmark);
+    // Sort by wordIndex ascending
+    filtered.sort((a, b) => a.wordIndex - b.wordIndex);
+    await safeSet(`doc_bookmarks_${docId}`, filtered);
+  },
+
+  async removeBookmark(docId: string, bookmarkId: string): Promise<void> {
+    const bookmarks = await this.getBookmarks(docId);
+    const updated = bookmarks.filter(b => b.id !== bookmarkId);
+    await safeSet(`doc_bookmarks_${docId}`, updated);
+  },
+
+  async removeBookmarkByIndex(docId: string, wordIndex: number): Promise<void> {
+    const bookmarks = await this.getBookmarks(docId);
+    const updated = bookmarks.filter(b => b.wordIndex !== wordIndex);
+    await safeSet(`doc_bookmarks_${docId}`, updated);
   },
 
   async getDocumentWords(id: string): Promise<string[] | null> {
