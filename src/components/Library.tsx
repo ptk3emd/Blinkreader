@@ -119,29 +119,29 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 md:p-12 w-full">
-      <header className="flex justify-between items-center mb-12">
+    <div className="max-w-4xl mx-auto p-4 md:p-12 w-full">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 mb-8 md:mb-12">
         <h1 className="text-3xl font-bold tracking-tight text-zinc-100">BlinkReader</h1>
         
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
           <button
             onClick={onOpenDashboard}
-            className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg transition-colors shadow-sm"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg transition-colors shadow-sm"
             title="Performance Dashboard"
           >
             <TrendingUp className="w-4 h-4" />
-            <span className="font-medium hidden sm:inline">Stats</span>
+            <span className="font-medium">Stats</span>
           </button>
           
           <button
             onClick={() => setShowPasteModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg transition-colors shadow-sm"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg transition-colors shadow-sm"
           >
             <FileText className="w-4 h-4" />
-            <span className="font-medium hidden sm:inline">Paste Text</span>
+            <span className="font-medium">Paste Text</span>
           </button>
 
-          <div>
+          <div className="w-full sm:w-auto">
             <input
               type="file"
               ref={fileInputRef}
@@ -153,7 +153,7 @@ export default function Library({ onSelect, onOpenDashboard }: LibraryProps) {
             <label
               htmlFor="file-upload"
               className={cn(
-                "flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-amber-50 rounded-lg cursor-pointer transition-colors shadow-sm",
+                "flex items-center justify-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-amber-50 rounded-lg cursor-pointer transition-colors shadow-sm w-full",
                 loading && "opacity-50 cursor-not-allowed"
               )}
             >

@@ -236,20 +236,20 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       {/* Top Bar */}
       <div 
         className={cn(
-          "flex items-center justify-between p-6 transition-opacity duration-300",
+          "flex flex-wrap items-center justify-between p-4 sm:p-6 gap-y-4 transition-opacity duration-300",
           isPlaying ? "opacity-0 pointer-events-none" : "opacity-100"
         )}
         onClick={(e) => e.stopPropagation()}
       >
         <button 
           onClick={onBack}
-          className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-colors px-3 py-2 -ml-3 rounded-lg"
+          className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-colors px-2 sm:px-3 py-2 -ml-2 sm:-ml-3 rounded-lg"
         >
           <ArrowLeft className="w-5 h-5" />
-          <span className="font-medium">Library</span>
+          <span className="font-medium hidden sm:inline">Library</span>
         </button>
         
-        <div className={cn("flex items-center gap-6 px-4 py-2 rounded-full border border-current opacity-70", themeBgAlt[theme])}>
+        <div className={cn("flex items-center gap-3 sm:gap-6 px-4 py-2 rounded-full border border-current opacity-70 order-3 w-full sm:w-auto sm:order-none justify-center", themeBgAlt[theme])}>
           <button onClick={(e) => { e.stopPropagation(); updateWpm(-25); }} className="hover:opacity-100 p-1 opacity-70">
             <Minus className="w-4 h-4" />
           </button>
@@ -261,16 +261,16 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
           <button 
             onClick={openSettings}
-            className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-colors px-3 py-2 rounded-lg"
+            className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-colors px-2 sm:px-3 py-2 rounded-lg"
           >
             <Settings className="w-5 h-5" />
           </button>
           <button 
             onClick={openNav}
-            className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-colors px-3 py-2 -mr-3 rounded-lg"
+            className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-colors px-2 sm:px-3 py-2 -mr-2 sm:-mr-3 rounded-lg"
           >
             <span className="font-medium hidden sm:inline">Navigate</span>
             <List className="w-5 h-5" />
@@ -311,12 +311,12 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
 
         {/* Context hints (optional, can be faded out if playing) */}
         {!isPlaying && (
-          <div className="absolute bottom-32 flex gap-12 font-mono text-xl pointer-events-none opacity-40">
-            <div className="opacity-50">{words[progress.currentWordIndex - 2] || ''}</div>
-            <div className="opacity-75">{words[progress.currentWordIndex - 1] || ''}</div>
-            <div className="w-32 text-center">—</div>
-            <div className="opacity-75">{words[progress.currentWordIndex + 1] || ''}</div>
-            <div className="opacity-50">{words[progress.currentWordIndex + 2] || ''}</div>
+          <div className="absolute bottom-24 sm:bottom-32 flex gap-4 sm:gap-12 font-mono text-sm sm:text-xl pointer-events-none opacity-40 px-4 w-full justify-center">
+            <div className="opacity-50 hidden sm:block">{words[progress.currentWordIndex - 2] || ''}</div>
+            <div className="opacity-75 truncate max-w-[80px] sm:max-w-none text-right">{words[progress.currentWordIndex - 1] || ''}</div>
+            <div className="w-8 sm:w-32 text-center shrink-0">—</div>
+            <div className="opacity-75 truncate max-w-[80px] sm:max-w-none text-left">{words[progress.currentWordIndex + 1] || ''}</div>
+            <div className="opacity-50 hidden sm:block">{words[progress.currentWordIndex + 2] || ''}</div>
           </div>
         )}
       </div>
@@ -324,7 +324,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       {/* Bottom Controls */}
       <div 
         className={cn(
-          "p-8 flex justify-center items-center gap-8 transition-opacity duration-300",
+          "p-4 sm:p-8 flex justify-center items-center gap-6 sm:gap-8 transition-opacity duration-300",
           isPlaying ? "opacity-0 pointer-events-none" : "opacity-100"
         )}
         onClick={(e) => e.stopPropagation()}
@@ -333,21 +333,21 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
           onClick={() => jumpWords(-10)}
           className={cn("transition-colors p-3 rounded-full opacity-60 hover:opacity-100", themeBgAlt[theme])}
         >
-          <ChevronLeft className="w-8 h-8" />
+          <ChevronLeft className="w-6 h-6 sm:w-8 sm:h-8" />
         </button>
 
         <button 
           onClick={togglePlay}
-          className={cn("w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 text-current", themeBgAlt[theme], "brightness-125")}
+          className={cn("w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 text-current", themeBgAlt[theme], "brightness-125")}
         >
-          {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
+          {isPlaying ? <Pause className="w-6 h-6 sm:w-8 sm:h-8 fill-current" /> : <Play className="w-6 h-6 sm:w-8 sm:h-8 fill-current ml-1" />}
         </button>
 
         <button 
           onClick={() => jumpWords(10)}
           className={cn("transition-colors p-3 rounded-full opacity-60 hover:opacity-100", themeBgAlt[theme])}
         >
-          <ChevronRight className="w-8 h-8" />
+          <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8" />
         </button>
       </div>
       
@@ -358,11 +358,11 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
           onClick={(e) => { e.stopPropagation(); setShowNav(false); }}
         >
           <div 
-            className="flex flex-col bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-6xl mx-auto h-full overflow-hidden shadow-2xl relative"
+            className="flex flex-col bg-zinc-950 border border-zinc-800 rounded-2xl sm:rounded-3xl w-full max-w-6xl mx-auto h-full overflow-hidden shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-6 border-b border-zinc-900">
-              <h2 className="text-2xl font-bold text-zinc-100">Navigate Text</h2>
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-zinc-900">
+              <h2 className="text-xl sm:text-2xl font-bold text-zinc-100">Navigate Text</h2>
               <button 
                 onClick={() => setShowNav(false)}
                 className="p-2 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-900 rounded-full transition-colors"
@@ -396,8 +396,8 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
               </div>
 
               {/* Right side Text Preview & Scrubber */}
-              <div className="flex-1 flex flex-col p-6 overflow-hidden">
-                <div className="mb-6 flex flex-col gap-2">
+              <div className="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden">
+                <div className="mb-4 sm:mb-6 flex flex-col gap-2">
                   <div className="flex justify-between text-sm font-mono text-zinc-500">
                     <span>0%</span>
                     <span className="text-amber-500 font-bold">{Math.round((navPreviewIndex / Math.max(1, words.length - 1)) * 100)}%</span>
@@ -416,7 +416,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                   </div>
                 </div>
 
-                <div className="flex-1 bg-zinc-900 rounded-2xl p-6 overflow-y-auto text-lg leading-relaxed text-zinc-400 border border-zinc-800/50 shadow-inner">
+                <div className="flex-1 bg-zinc-900 rounded-xl sm:rounded-2xl p-4 sm:p-6 overflow-y-auto text-base sm:text-lg leading-relaxed text-zinc-400 border border-zinc-800/50 shadow-inner">
                   {(() => {
                     const startIdx = Math.max(0, navPreviewIndex - 100);
                     const endIdx = Math.min(words.length, navPreviewIndex + 300);
@@ -455,10 +455,10 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
               </div>
             </div>
 
-            <div className="p-6 border-t border-zinc-900 bg-zinc-950 flex justify-end">
+            <div className="p-4 sm:p-6 border-t border-zinc-900 bg-zinc-950 flex justify-end">
               <button 
                 onClick={jumpToNavIndex}
-                className="px-8 py-3 bg-amber-600 hover:bg-amber-500 text-amber-50 rounded-xl font-bold transition-transform active:scale-95 shadow-lg"
+                className="px-6 py-3 sm:px-8 bg-amber-600 hover:bg-amber-500 text-amber-50 rounded-xl font-bold transition-transform active:scale-95 shadow-lg w-full sm:w-auto text-center"
               >
                 Jump to this point
               </button>
@@ -474,11 +474,11 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
           onClick={(e) => { e.stopPropagation(); setShowSettings(false); }}
         >
           <div 
-            className="flex flex-col bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-md mx-auto overflow-hidden shadow-2xl relative"
+            className="flex flex-col bg-zinc-950 border border-zinc-800 rounded-2xl sm:rounded-3xl w-full max-w-md mx-auto overflow-hidden shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-6 border-b border-zinc-900">
-              <h2 className="text-2xl font-bold text-zinc-100">Settings</h2>
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-zinc-900">
+              <h2 className="text-xl sm:text-2xl font-bold text-zinc-100">Settings</h2>
               <button 
                 onClick={() => setShowSettings(false)}
                 className="p-2 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-900 rounded-full transition-colors"

@@ -77,8 +77,8 @@ export default function Dashboard({ onBack }: DashboardProps) {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 md:p-12 w-full">
-      <header className="flex items-center gap-4 mb-12">
+    <div className="max-w-4xl mx-auto p-4 md:p-12 w-full">
+      <header className="flex items-center gap-4 mb-8 md:mb-12">
         <button 
           onClick={onBack}
           className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
@@ -88,7 +88,7 @@ export default function Dashboard({ onBack }: DashboardProps) {
         <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Performance</h1>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-8 md:mb-12">
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
           <div className="flex items-center gap-3 text-zinc-400 mb-2">
             <TrendingUp className="w-5 h-5 text-amber-500" />
