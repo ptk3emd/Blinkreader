@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Play, Pause, List, ChevronLeft, ChevronRight, Minus, Plus, X, Settings } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ArrowLeft, Play, Pause, List, ChevronLeft, ChevronRight, Minus, Plus, X, Settings, Zap } from 'lucide-react';
 import { storage, DocumentProgress, Theme } from '../lib/storage';
 import { formatRSVPWord, RSVPWord } from '../lib/rsvp';
 import { cn } from '../lib/utils';
@@ -23,6 +23,13 @@ const themeAccents: Record<Theme, string> = {
   oled: 'text-zinc-400'
 };
 
+const themeBgAccent: Record<Theme, string> = {
+  dark: 'bg-amber-500',
+  sepia: 'bg-red-700',
+  solarized: 'bg-[#2aa198]',
+  oled: 'bg-zinc-200'
+};
+
 const themeBgAlt: Record<Theme, string> = {
   dark: 'bg-zinc-900',
   sepia: 'bg-[#E8DFCA]',
@@ -41,15 +48,38 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
   const [toc, setToc] = useState<{label: string, index: number}[]>([]);
   const [theme, setTheme] = useState<Theme>('dark');
   const [fontSize, setFontSize] = useState<number>(100);
+  const [showContextWords, setShowContextWords] = useState<boolean>(true);
+  const [autoSpeedAdjustment, setAutoSpeedAdjustment] = useState<boolean>(true);
+  const [speedNotification, setSpeedNotification] = useState<{ message: string; type: 'up' | 'down'; id: number } | null>(null);
   
   const timerRef = useRef<number | null>(null);
   const currentWordIndexRef = useRef(0);
   const wpmRef = useRef(300);
   const isPlayingRef = useRef(false);
+  const autoSpeedAdjustmentRef = useRef(true);
+  const focusStreakWordsRef = useRef(0);
+  const wordsInCurrentPlaySessionRef = useRef(0);
+  const recentPausesTimestampsRef = useRef<number[]>([]);
+  const notificationTimeoutRef = useRef<number | null>(null);
   
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    autoSpeedAdjustmentRef.current = autoSpeedAdjustment;
+  }, [autoSpeedAdjustment]);
+
+  const triggerSpeedNotification = useCallback((message: string, type: 'up' | 'down') => {
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+    const id = Date.now();
+    setSpeedNotification({ message, type, id });
+    notificationTimeoutRef.current = window.setTimeout(() => {
+      setSpeedNotification(curr => (curr?.id === id ? null : curr));
+    }, 2200);
+  }, []);
   
   useEffect(() => {
     const loadData = async () => {
@@ -65,6 +95,13 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       setTheme(userSettings.theme);
       if (userSettings.fontSize) {
         setFontSize(userSettings.fontSize);
+      }
+      if (userSettings.showContextWords !== undefined) {
+        setShowContextWords(userSettings.showContextWords);
+      }
+      if (userSettings.autoSpeedAdjustment !== undefined) {
+        setAutoSpeedAdjustment(userSettings.autoSpeedAdjustment);
+        autoSpeedAdjustmentRef.current = userSettings.autoSpeedAdjustment;
       }
 
       setLoading(false);
@@ -129,6 +166,22 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     if (currentWordIndexRef.current < words.length - 1) {
       currentWordIndexRef.current += 1;
       setProgress(p => ({ ...p, currentWordIndex: currentWordIndexRef.current }));
+
+      // Track focus streak for auto-speed adjustment
+      focusStreakWordsRef.current += 1;
+      wordsInCurrentPlaySessionRef.current += 1;
+
+      // Auto-increase speed (+5 WPM) every 60 consecutive words of sustained focus flow
+      if (autoSpeedAdjustmentRef.current && focusStreakWordsRef.current >= 60) {
+        focusStreakWordsRef.current = 0;
+        if (wpmRef.current < 1000) {
+          const newWpm = Math.min(1000, wpmRef.current + 5);
+          wpmRef.current = newWpm;
+          setProgress(p => ({ ...p, wpm: newWpm }));
+          saveProgress();
+          triggerSpeedNotification(`+5 WPM · Focus flow (${newWpm} WPM)`, 'up');
+        }
+      }
       
       // Calculate delay based on word features (punctuation, length) to improve comprehension
       let delayMultiplier = 1;
@@ -146,7 +199,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     } else {
       setIsPlaying(false);
     }
-  }, [words]);
+  }, [words, saveProgress, triggerSpeedNotification]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -161,9 +214,42 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     };
   }, [isPlaying, nextWord]);
 
-  const togglePlay = () => setIsPlaying(!isPlaying);
+  const togglePlay = () => {
+    const nextPlayingState = !isPlaying;
+    
+    if (!nextPlayingState) {
+      // User paused reading: check for hesitation or frequent pauses
+      const now = Date.now();
+      const recentPauses = recentPausesTimestampsRef.current.filter(t => now - t < 25000);
+      const isFrequentPause = recentPauses.length >= 2;
+      const isQuickStall = wordsInCurrentPlaySessionRef.current > 0 && wordsInCurrentPlaySessionRef.current < 15;
+      
+      if (autoSpeedAdjustmentRef.current && (isFrequentPause || isQuickStall)) {
+        if (wpmRef.current > 60) {
+          const newWpm = Math.max(50, wpmRef.current - 10);
+          wpmRef.current = newWpm;
+          setProgress(p => ({ ...p, wpm: newWpm }));
+          saveProgress();
+          triggerSpeedNotification(`-10 WPM · Pacing adjusted (${newWpm} WPM)`, 'down');
+        }
+        recentPausesTimestampsRef.current = [];
+      } else {
+        recentPausesTimestampsRef.current = [...recentPauses, now];
+      }
+
+      focusStreakWordsRef.current = 0;
+      wordsInCurrentPlaySessionRef.current = 0;
+    } else {
+      // Resumed reading
+      wordsInCurrentPlaySessionRef.current = 0;
+    }
+
+    setIsPlaying(nextPlayingState);
+  };
 
   const updateWpm = (delta: number) => {
+    focusStreakWordsRef.current = 0;
+    wordsInCurrentPlaySessionRef.current = 0;
     const newWpm = Math.max(50, Math.min(1000, wpmRef.current + delta));
     wpmRef.current = newWpm;
     setProgress(p => ({ ...p, wpm: newWpm }));
@@ -175,6 +261,19 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     newIndex = Math.max(0, Math.min(words.length - 1, newIndex));
     currentWordIndexRef.current = newIndex;
     setProgress(p => ({ ...p, currentWordIndex: newIndex }));
+
+    // If rewinding backwards, adjust pacing slightly to aid comprehension
+    if (delta < 0) {
+      focusStreakWordsRef.current = 0;
+      wordsInCurrentPlaySessionRef.current = 0;
+      if (autoSpeedAdjustmentRef.current && wpmRef.current > 60) {
+        const newWpm = Math.max(50, wpmRef.current - 10);
+        wpmRef.current = newWpm;
+        setProgress(p => ({ ...p, wpm: newWpm }));
+        saveProgress();
+        triggerSpeedNotification(`-10 WPM · Rewind adjusted (${newWpm} WPM)`, 'down');
+      }
+    }
   };
 
   const openNav = (e: React.MouseEvent) => {
@@ -190,6 +289,31 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     setShowNav(false);
   };
 
+  const handleProgressSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (words.length <= 1) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+    const newIndex = Math.min(words.length - 1, Math.round(percentage * (words.length - 1)));
+    
+    // Check if user seeks back significantly (> 20 words)
+    if (newIndex < currentWordIndexRef.current - 20) {
+      focusStreakWordsRef.current = 0;
+      wordsInCurrentPlaySessionRef.current = 0;
+      if (autoSpeedAdjustmentRef.current && wpmRef.current > 60) {
+        const newWpm = Math.max(50, wpmRef.current - 10);
+        wpmRef.current = newWpm;
+        saveProgress();
+        triggerSpeedNotification(`-10 WPM · Seek adjusted (${newWpm} WPM)`, 'down');
+      }
+    }
+
+    currentWordIndexRef.current = newIndex;
+    setProgress(p => ({ ...p, currentWordIndex: newIndex }));
+    saveProgress();
+  };
+
   const updateTheme = (newTheme: Theme) => {
     setTheme(newTheme);
     storage.updateSettings({ theme: newTheme });
@@ -198,6 +322,20 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
   const updateFontSize = (newSize: number) => {
     setFontSize(newSize);
     storage.updateSettings({ fontSize: newSize });
+  };
+
+  const updateShowContextWords = (enabled: boolean) => {
+    setShowContextWords(enabled);
+    storage.updateSettings({ showContextWords: enabled });
+  };
+
+  const updateAutoSpeedAdjustment = (enabled: boolean) => {
+    setAutoSpeedAdjustment(enabled);
+    autoSpeedAdjustmentRef.current = enabled;
+    storage.updateSettings({ autoSpeedAdjustment: enabled });
+    if (enabled) {
+      triggerSpeedNotification('Adaptive WPM Enabled', 'up');
+    }
   };
 
   const openSettings = (e: React.MouseEvent) => {
@@ -236,12 +374,40 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
   }
 
   const currentWord = words[progress.currentWordIndex] || '';
+  const previousWordText = progress.currentWordIndex > 0 ? words[progress.currentWordIndex - 1] : '';
+  const nextWordText = progress.currentWordIndex < words.length - 1 ? words[progress.currentWordIndex + 1] : '';
   const formattedWord = formatRSVPWord(currentWord);
-  const progressPercent = words.length > 0 ? (progress.currentWordIndex / (words.length - 1)) * 100 : 0;
+  const progressPercent = words.length > 0 ? (progress.currentWordIndex / Math.max(1, words.length - 1)) * 100 : 0;
+  const wordsLeft = Math.max(0, words.length - (progress.currentWordIndex + 1));
+  const minutesLeft = Math.ceil(wordsLeft / Math.max(1, progress.wpm));
+  const currentWordDisplayNum = Math.min(words.length, progress.currentWordIndex + 1);
 
   return (
-    <div className={cn("flex flex-col h-screen overflow-hidden", themeClasses[theme])} onClick={togglePlay}>
+    <div className={cn("flex flex-col h-screen overflow-hidden select-none", themeClasses[theme])} onClick={togglePlay}>
       
+      {/* Top Persistent Progress Indicator */}
+      <div className={cn("w-full h-1 relative z-20 shrink-0", themeBgAlt[theme])}>
+        <div 
+          className={cn("h-full transition-all duration-150 ease-out", themeBgAccent[theme])} 
+          style={{ width: `${progressPercent}%` }} 
+        />
+      </div>
+
+      {/* Floating Speed Auto-Adjustment Notification */}
+      {speedNotification && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 animate-in fade-in slide-in-from-top-3">
+          <div className={cn(
+            "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-mono font-semibold shadow-lg backdrop-blur-md border",
+            speedNotification.type === 'up'
+              ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/40"
+              : "bg-amber-950/90 text-amber-300 border-amber-500/40"
+          )}>
+            <Zap className={cn("w-3.5 h-3.5", speedNotification.type === 'up' ? "text-emerald-400 fill-emerald-400" : "text-amber-400 fill-amber-400")} />
+            <span>{speedNotification.message}</span>
+          </div>
+        </div>
+      )}
+
       {/* Top Bar */}
       <div 
         className={cn(
@@ -258,14 +424,26 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
           <span className="font-medium hidden sm:inline">Library</span>
         </button>
         
-        <div className={cn("flex items-center gap-3 sm:gap-6 px-4 py-2 rounded-full border border-current opacity-70 order-3 w-full sm:w-auto sm:order-none justify-center", themeBgAlt[theme])}>
-          <button onClick={(e) => { e.stopPropagation(); updateWpm(-25); }} className="hover:opacity-100 p-1 opacity-70">
+        <div className={cn("flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border border-current opacity-70 order-3 w-full sm:w-auto sm:order-none justify-center", themeBgAlt[theme])}>
+          <button onClick={(e) => { e.stopPropagation(); updateWpm(-25); }} className="hover:opacity-100 p-1 opacity-70" title="Decrease speed (-25 WPM)">
             <Minus className="w-4 h-4" />
           </button>
-          <div className="font-mono font-medium text-lg w-20 text-center">
-            {progress.wpm} <span className="text-xs opacity-50">WPM</span>
+          
+          <div className="flex items-center gap-1.5 font-mono font-medium text-base sm:text-lg">
+            <span>{progress.wpm}</span>
+            <span className="text-xs opacity-50">WPM</span>
+            {autoSpeedAdjustment && (
+              <span 
+                className="ml-1 text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 flex items-center gap-0.5"
+                title="Adaptive Speed is Active: speeds up during focus flow, slows down on pause/rewind"
+              >
+                <Zap className="w-2.5 h-2.5 fill-current" />
+                AUTO
+              </span>
+            )}
           </div>
-          <button onClick={(e) => { e.stopPropagation(); updateWpm(25); }} className="hover:opacity-100 p-1 opacity-70">
+
+          <button onClick={(e) => { e.stopPropagation(); updateWpm(25); }} className="hover:opacity-100 p-1 opacity-70" title="Increase speed (+25 WPM)">
             <Plus className="w-4 h-4" />
           </button>
         </div>
@@ -289,54 +467,96 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
 
       {/* Main Reader Area */}
       <div className="flex-1 flex flex-col items-center justify-center relative px-4">
-        
-        {/* Progress Bar (Subtle) */}
-        <div className={cn("absolute top-0 left-0 w-full h-1", themeBgAlt[theme])}>
-          <div 
-            className={cn("h-full transition-all duration-300 ease-out opacity-50", themeBgAlt[theme], "brightness-150")} 
-            style={{ width: `${progressPercent}%`, backgroundColor: 'currentColor' }} 
-          />
-        </div>
 
-        {/* Word Display */}
+        {/* Word Display with Context Words */}
         <div 
-          className="flex items-baseline font-mono text-[8vw] md:text-7xl lg:text-8xl w-full transition-transform duration-200 origin-center"
+          className="flex flex-col items-center justify-center w-full transition-transform duration-200 origin-center select-none"
           style={{ transform: `scale(${fontSize / 100})` }}
         >
-          {/* Prefix (right-aligned) */}
-          <div className="flex-1 text-right opacity-80">
-            {formattedWord.prefix}
+          {/* Previous Word (Larger font, lower opacity) */}
+          {showContextWords && (
+            <div className="font-mono text-sm sm:text-xl md:text-2xl lg:text-3xl opacity-20 h-8 sm:h-10 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none">
+              {previousWordText || <span className="opacity-0">—</span>}
+            </div>
+          )}
+
+          {/* Current RSVP Word */}
+          <div className="flex items-baseline font-mono text-[8vw] md:text-7xl lg:text-8xl w-full my-4 sm:my-6">
+            {/* Prefix (right-aligned) */}
+            <div className="flex-1 text-right opacity-80">
+              {formattedWord.prefix}
+            </div>
+            {/* ORP (highlighted) */}
+            <div className={cn("font-bold relative shrink-0", themeAccents[theme])}>
+              {/* Crosshair indicator lines (positioned with safe margin to avoid overlapping characters and context words) */}
+              <div className="absolute -top-3.5 sm:-top-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-40 rounded-full pointer-events-none"></div>
+              <div className="absolute -bottom-3.5 sm:-bottom-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-40 rounded-full pointer-events-none"></div>
+              
+              {formattedWord.orp}
+            </div>
+            {/* Suffix (left-aligned) */}
+            <div className="flex-1 text-left opacity-80">
+              {formattedWord.suffix}
+            </div>
           </div>
-          {/* ORP (highlighted) */}
-          <div className={cn("font-bold relative", themeAccents[theme])}>
-            {/* Crosshair indicator lines */}
-            <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-px h-4 bg-current opacity-30"></div>
-            <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 w-px h-4 bg-current opacity-30"></div>
-            
-            {formattedWord.orp}
-          </div>
-          {/* Suffix (left-aligned) */}
-          <div className="flex-1 text-left opacity-80">
-            {formattedWord.suffix}
-          </div>
+
+          {/* Next Word (Larger font, lower opacity) */}
+          {showContextWords && (
+            <div className="font-mono text-sm sm:text-xl md:text-2xl lg:text-3xl opacity-20 h-8 sm:h-10 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none">
+              {nextWordText || <span className="opacity-0">—</span>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Visual Progress Bar & Tracking Info */}
+      <div 
+        className={cn(
+          "w-full max-w-xl mx-auto px-6 transition-opacity duration-300 z-10",
+          isPlaying ? "opacity-35 hover:opacity-100" : "opacity-100"
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Progress labels */}
+        <div className="flex items-center justify-between text-xs sm:text-sm font-mono opacity-80 mb-2 select-none">
+          <span className="font-medium">
+            Word <span className={cn("font-bold", themeAccents[theme])}>{currentWordDisplayNum.toLocaleString()}</span> of {words.length.toLocaleString()}
+          </span>
+          <span className="font-bold px-2 py-0.5 rounded bg-current/10">
+            {Math.round(progressPercent)}%
+          </span>
+          <span>
+            {wordsLeft === 0 ? 'Finished' : `~${minutesLeft} min left`}
+          </span>
         </div>
 
-        {/* Context hints (optional, can be faded out if playing) */}
-        {!isPlaying && (
-          <div className="absolute bottom-24 sm:bottom-32 flex gap-4 sm:gap-12 font-mono text-sm sm:text-xl pointer-events-none opacity-40 px-4 w-full justify-center">
-            <div className="opacity-50 hidden sm:block">{words[progress.currentWordIndex - 2] || ''}</div>
-            <div className="opacity-75 truncate max-w-[80px] sm:max-w-none text-right">{words[progress.currentWordIndex - 1] || ''}</div>
-            <div className="w-8 sm:w-32 text-center shrink-0">—</div>
-            <div className="opacity-75 truncate max-w-[80px] sm:max-w-none text-left">{words[progress.currentWordIndex + 1] || ''}</div>
-            <div className="opacity-50 hidden sm:block">{words[progress.currentWordIndex + 2] || ''}</div>
+        {/* Interactive Progress Track */}
+        <div 
+          className={cn(
+            "group relative h-2.5 sm:h-3 rounded-full cursor-pointer transition-all hover:h-4 flex items-center shadow-inner",
+            themeBgAlt[theme]
+          )}
+          onClick={handleProgressSeek}
+          title="Click to jump to this point in document"
+        >
+          {/* Progress fill */}
+          <div 
+            className={cn(
+              "h-full rounded-full transition-all duration-150 ease-out relative",
+              themeBgAccent[theme]
+            )}
+            style={{ width: `${progressPercent}%` }}
+          >
+            {/* Scrubber thumb */}
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-4 h-4 rounded-full bg-white shadow-md border-2 border-zinc-900 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
           </div>
-        )}
+        </div>
       </div>
 
       {/* Bottom Controls */}
       <div 
         className={cn(
-          "p-4 sm:p-8 flex justify-center items-center gap-6 sm:gap-8 transition-opacity duration-300",
+          "p-4 sm:p-6 flex justify-center items-center gap-6 sm:gap-8 transition-opacity duration-300",
           isPlaying ? "opacity-0 pointer-events-none" : "opacity-100"
         )}
         onClick={(e) => e.stopPropagation()}
@@ -556,7 +776,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
               </div>
 
               <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Text Size</h3>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-8">
                 <div className="flex items-center justify-between text-zinc-400 mb-4">
                   <span className="text-sm">Smaller</span>
                   <span className="font-mono text-amber-500 font-bold">{fontSize}%</span>
@@ -571,6 +791,52 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                   onChange={(e) => updateFontSize(Number(e.target.value))}
                   className="w-full accent-amber-500 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
                 />
+              </div>
+
+              <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Reading Context</h3>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center justify-between mb-8">
+                <div className="flex flex-col pr-4">
+                  <span className="text-zinc-100 font-medium text-sm sm:text-base">Show Previous & Next Word</span>
+                  <span className="text-xs text-zinc-500 mt-0.5">Display adjacent words in smaller font and reduced opacity</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateShowContextWords(!showContextWords)}
+                  className={cn(
+                    "w-12 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors duration-200 cursor-pointer",
+                    showContextWords ? "bg-amber-600 justify-end" : "bg-zinc-800 justify-start"
+                  )}
+                  aria-label="Toggle context words"
+                >
+                  <div className="bg-white w-4 h-4 rounded-full shadow-md" />
+                </button>
+              </div>
+
+              <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Adaptive Speed (Auto WPM)</h3>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center justify-between">
+                <div className="flex flex-col pr-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-100 font-medium text-sm sm:text-base">Auto-Adjust Speed</span>
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 flex items-center gap-0.5">
+                      <Zap className="w-2.5 h-2.5 fill-current" />
+                      Smart
+                    </span>
+                  </div>
+                  <span className="text-xs text-zinc-500 mt-1">
+                    Subtly accelerates (+5 WPM) during continuous focus streaks and dials back (-10 WPM) on pauses or rewinds.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateAutoSpeedAdjustment(!autoSpeedAdjustment)}
+                  className={cn(
+                    "w-12 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors duration-200 cursor-pointer",
+                    autoSpeedAdjustment ? "bg-amber-600 justify-end" : "bg-zinc-800 justify-start"
+                  )}
+                  aria-label="Toggle auto speed adjustment"
+                >
+                  <div className="bg-white w-4 h-4 rounded-full shadow-md" />
+                </button>
               </div>
             </div>
           </div>

@@ -18,6 +18,8 @@ export type Theme = 'dark' | 'sepia' | 'solarized' | 'oled';
 export interface UserSettings {
   theme: Theme;
   fontSize: number; // Percentage, e.g., 100 for normal, 120 for 120%
+  showContextWords?: boolean;
+  autoSpeedAdjustment?: boolean; // Dynamically adjusts WPM based on focus streak and rewind/pause frequency
 }
 
 export interface WpmHistory {
@@ -77,7 +79,13 @@ export const storage = {
 
   async getSettings(): Promise<UserSettings> {
     const settings = await db.getItem<UserSettings>('user_settings');
-    return settings || { theme: 'dark', fontSize: 100 };
+    return {
+      theme: 'dark',
+      fontSize: 100,
+      showContextWords: true,
+      autoSpeedAdjustment: true,
+      ...(settings || {})
+    };
   },
 
   async updateSettings(settings: Partial<UserSettings>): Promise<void> {
