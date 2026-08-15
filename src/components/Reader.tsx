@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ArrowLeft, Play, Pause, List, ChevronLeft, ChevronRight, 
   Minus, Plus, X, Settings, Zap, Bookmark as BookmarkIcon, 
-  BookmarkCheck, BookmarkPlus, Trash2 
+  BookmarkCheck, BookmarkPlus, Trash2, RotateCcw 
 } from 'lucide-react';
 import { storage, DocumentProgress, Theme, Bookmark } from '../lib/storage';
 import { formatRSVPWord, RSVPWord } from '../lib/rsvp';
@@ -70,7 +70,10 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [activeNavTab, setActiveNavTab] = useState<'toc' | 'bookmarks'>('toc');
   const [bookmarkToast, setBookmarkToast] = useState<{ message: string; id: number } | null>(null);
+  const [resumeToast, setResumeToast] = useState<{ message: string; id: number } | null>(null);
+  const [exactWordInput, setExactWordInput] = useState<string>('');
   const bookmarkToastTimeoutRef = useRef<number | null>(null);
+  const resumeToastTimeoutRef = useRef<number | null>(null);
 
   const triggerBookmarkToast = useCallback((message: string) => {
     if (bookmarkToastTimeoutRef.current) {
@@ -82,9 +85,21 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       setBookmarkToast(curr => (curr?.id === id ? null : curr));
     }, 2400);
   }, []);
+
+  const triggerResumeToast = useCallback((message: string) => {
+    if (resumeToastTimeoutRef.current) {
+      clearTimeout(resumeToastTimeoutRef.current);
+    }
+    const id = Date.now();
+    setResumeToast({ message, id });
+    resumeToastTimeoutRef.current = window.setTimeout(() => {
+      setResumeToast(curr => (curr?.id === id ? null : curr));
+    }, 3200);
+  }, []);
   
   const timerRef = useRef<number | null>(null);
   const currentWordIndexRef = useRef(0);
+  const lastSavedWordIndexRef = useRef(0);
   const wpmRef = useRef(300);
   const isPlayingRef = useRef(false);
   const autoSpeedAdjustmentRef = useRef(true);
@@ -112,15 +127,42 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     }, 2200);
   }, []);
   
+  const saveProgress = useCallback(() => {
+    const currentIdx = currentWordIndexRef.current;
+    const currentWpm = wpmRef.current;
+    lastSavedWordIndexRef.current = currentIdx;
+    storage.updateDocumentProgress(documentId, {
+      currentWordIndex: currentIdx,
+      wpm: currentWpm
+    });
+  }, [documentId]);
+
   useEffect(() => {
     const loadData = async () => {
+      // Record document as recently opened
+      await storage.recordRecentlyRead(documentId);
+
       const docWords = await storage.getDocumentWords(documentId);
+      const totalWordsCount = docWords ? docWords.length : 0;
       if (docWords) setWords(docWords);
       
       const docProgress = await storage.getDocumentProgress(documentId);
-      setProgress(docProgress);
-      currentWordIndexRef.current = docProgress.currentWordIndex;
-      wpmRef.current = docProgress.wpm;
+      const initialIndex = Math.max(0, Math.min(Math.max(0, totalWordsCount - 1), docProgress.currentWordIndex || 0));
+      
+      setProgress({
+        currentWordIndex: initialIndex,
+        wpm: docProgress.wpm || 300
+      });
+      currentWordIndexRef.current = initialIndex;
+      lastSavedWordIndexRef.current = initialIndex;
+      wpmRef.current = docProgress.wpm || 300;
+      setNavPreviewIndex(initialIndex);
+      setExactWordInput(String(initialIndex + 1));
+
+      if (initialIndex > 0 && totalWordsCount > 0) {
+        const percent = Math.min(100, Math.round(((initialIndex + 1) / totalWordsCount) * 100));
+        triggerResumeToast(`Retomando da palavra ${(initialIndex + 1).toLocaleString()} de ${totalWordsCount.toLocaleString()} (${percent}%)`);
+      }
 
       const userSettings = await storage.getSettings();
       setTheme(userSettings.theme);
@@ -141,7 +183,24 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       setLoading(false);
     };
     loadData();
-  }, [documentId]);
+  }, [documentId, triggerResumeToast]);
+
+  // Lifecycle listeners for instant crash-proof state persistence
+  useEffect(() => {
+    const handleLifecycleSave = () => {
+      saveProgress();
+    };
+
+    document.addEventListener('visibilitychange', handleLifecycleSave);
+    window.addEventListener('pagehide', handleLifecycleSave);
+    window.addEventListener('beforeunload', handleLifecycleSave);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleLifecycleSave);
+      window.removeEventListener('pagehide', handleLifecycleSave);
+      window.removeEventListener('beforeunload', handleLifecycleSave);
+    };
+  }, [saveProgress]);
 
   useEffect(() => {
     if (words.length > 0) {
@@ -177,13 +236,6 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     }
   }, [words]);
 
-  const saveProgress = useCallback(() => {
-    storage.updateDocumentProgress(documentId, {
-      currentWordIndex: currentWordIndexRef.current,
-      wpm: wpmRef.current
-    });
-  }, [documentId]);
-
   // Handle cleanup and save on unmount
   useEffect(() => {
     return () => {
@@ -199,7 +251,13 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     
     if (currentWordIndexRef.current < words.length - 1) {
       currentWordIndexRef.current += 1;
-      setProgress(p => ({ ...p, currentWordIndex: currentWordIndexRef.current }));
+      const newIndex = currentWordIndexRef.current;
+      setProgress(p => ({ ...p, currentWordIndex: newIndex }));
+
+      // Periodic auto-save every 10 words to ensure uninterrupted exact progress
+      if (Math.abs(newIndex - lastSavedWordIndexRef.current) >= 10) {
+        saveProgress();
+      }
 
       // Track focus streak for auto-speed adjustment
       focusStreakWordsRef.current += 1;
@@ -219,7 +277,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       
       // Calculate delay based on word features (punctuation, length) to improve comprehension
       let delayMultiplier = 1;
-      const word = words[currentWordIndexRef.current];
+      const word = words[newIndex];
       if (word) {
         if (word.endsWith('.') || word.endsWith('!') || word.endsWith('?')) delayMultiplier = 2.5;
         else if (word.endsWith(',') || word.endsWith(';') || word.endsWith(':')) delayMultiplier = 1.8;
@@ -232,6 +290,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       timerRef.current = window.setTimeout(nextWord, totalDelay);
     } else {
       setIsPlaying(false);
+      saveProgress();
     }
   }, [words, saveProgress, triggerSpeedNotification]);
 
@@ -252,7 +311,10 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     const nextPlayingState = !isPlaying;
     
     if (!nextPlayingState) {
-      // User paused reading: check for hesitation or frequent pauses
+      // User paused reading: save progress immediately
+      saveProgress();
+
+      // Check for hesitation or frequent pauses
       const now = Date.now();
       const recentPauses = recentPausesTimestampsRef.current.filter(t => now - t < 25000);
       const isFrequentPause = recentPauses.length >= 2;
@@ -281,6 +343,20 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     setIsPlaying(nextPlayingState);
   };
 
+  const handleBack = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setIsPlaying(false);
+    saveProgress();
+    onBack();
+  };
+
+  const restartReading = () => {
+    currentWordIndexRef.current = 0;
+    setProgress(p => ({ ...p, currentWordIndex: 0 }));
+    saveProgress();
+    triggerResumeToast('Leitura reiniciada do início (palavra 1)');
+  };
+
   const updateWpm = (delta: number) => {
     focusStreakWordsRef.current = 0;
     wordsInCurrentPlaySessionRef.current = 0;
@@ -304,6 +380,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     newIndex = Math.max(0, Math.min(words.length - 1, newIndex));
     currentWordIndexRef.current = newIndex;
     setProgress(p => ({ ...p, currentWordIndex: newIndex }));
+    saveProgress();
 
     // If rewinding backwards, adjust pacing slightly to aid comprehension
     if (delta < 0) {
@@ -323,6 +400,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     e.stopPropagation();
     setIsPlaying(false);
     setNavPreviewIndex(currentWordIndexRef.current);
+    setExactWordInput(String(currentWordIndexRef.current + 1));
     setShowNav(true);
   };
 
@@ -331,6 +409,16 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     setProgress(p => ({ ...p, currentWordIndex: navPreviewIndex }));
     setShowNav(false);
     saveProgress();
+  };
+
+  const handleDirectWordSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const parsedNum = parseInt(exactWordInput, 10);
+    if (!isNaN(parsedNum) && words.length > 0) {
+      const targetIdx = Math.max(0, Math.min(words.length - 1, parsedNum - 1));
+      setNavPreviewIndex(targetIdx);
+      setExactWordInput(String(targetIdx + 1));
+    }
   };
 
   const jumpToBookmarkIndex = (index: number) => {
@@ -517,6 +605,15 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
         </div>
       )}
 
+      {resumeToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 animate-in fade-in slide-in-from-top-3">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-[30px] text-xs sm:text-sm font-semibold shadow-[0_10px_30px_-18px_rgba(0,0,0,0.45)] backdrop-blur-md border bg-[#222228] text-[#5fa777] border-[#28342b]">
+            <Zap className="w-4 h-4 text-[#5fa777] fill-[#5fa777]" />
+            <span>{resumeToast.message}</span>
+          </div>
+        </div>
+      )}
+
       {/* Top Bar */}
       <div 
         className={cn(
@@ -526,7 +623,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <button 
-          onClick={onBack}
+          onClick={handleBack}
           className="flex items-center gap-2 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] transition-all px-3 py-2 rounded-[11px] cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -734,7 +831,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       {/* Bottom Controls */}
       <div 
         className={cn(
-          "p-5 sm:p-7 flex justify-center items-center gap-6 sm:gap-8 transition-opacity duration-300",
+          "p-5 sm:p-7 flex justify-center items-center gap-4 sm:gap-8 transition-opacity duration-300",
           isPlaying ? "opacity-0 pointer-events-none" : "opacity-100"
         )}
         onClick={(e) => e.stopPropagation()}
@@ -762,6 +859,17 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
         >
           <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
+
+        {progress.currentWordIndex >= Math.max(1, words.length - 1) && words.length > 0 && (
+          <button
+            onClick={restartReading}
+            className="px-3.5 py-2.5 rounded-full bg-[#222228] border border-[#5fa777]/40 text-[#5fa777] hover:bg-[#5fa777]/15 transition-all text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+            title="Reiniciar leitura a partir da palavra 1"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reiniciar</span>
+          </button>
+        )}
       </div>
       
       {/* Navigation Modal */}
@@ -905,23 +1013,59 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
 
               {/* Right side Text Preview & Scrubber */}
               <div className="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden">
-                <div className="mb-3 sm:mb-5 flex flex-col gap-2">
-                  <div className="flex justify-between text-xs font-mono text-[#9a9aa3]">
-                    <span>0%</span>
-                    <span className="text-[#FCFD76] font-bold font-mono">{Math.round((navPreviewIndex / Math.max(1, words.length - 1)) * 100)}%</span>
-                    <span>100%</span>
+                <div className="mb-3 sm:mb-5 flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between text-xs font-mono text-[#9a9aa3]">
+                    <span>Início (0%)</span>
+                    <span className="text-[#FCFD76] font-bold font-mono text-sm">
+                      {Math.round((navPreviewIndex / Math.max(1, words.length - 1)) * 100)}%
+                    </span>
+                    <span>Fim (100%)</span>
                   </div>
+
                   <input 
                     type="range" 
                     min={0} 
                     max={Math.max(0, words.length - 1)} 
                     value={navPreviewIndex} 
-                    onChange={(e) => setNavPreviewIndex(Number(e.target.value))}
-                    className="w-full accent-[#FCFD76] cursor-pointer h-2 bg-[#3a3a44] rounded-lg appearance-none"
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setNavPreviewIndex(val);
+                      setExactWordInput(String(val + 1));
+                    }}
+                    className="w-full accent-[#FCFD76] cursor-pointer h-2.5 bg-[#3a3a44] rounded-lg appearance-none"
                   />
-                  <div className="text-center text-xs text-[#9a9aa3] mt-0.5 font-mono">
-                    Palavra {(navPreviewIndex + 1).toLocaleString()} de {words.length.toLocaleString()}
-                  </div>
+
+                  {/* Direct Exact Word Number Input */}
+                  <form 
+                    onSubmit={handleDirectWordSubmit} 
+                    className="flex flex-wrap items-center justify-between gap-2 pt-1"
+                  >
+                    <div className="text-xs text-[#9a9aa3] font-mono">
+                      Palavra <span className="text-[#e8e8ec] font-bold">{(navPreviewIndex + 1).toLocaleString()}</span> de {words.length.toLocaleString()}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <label htmlFor="exactWordInput" className="text-[11px] text-[#9a9aa3] font-medium hidden sm:inline">
+                        Ir para palavra:
+                      </label>
+                      <input 
+                        id="exactWordInput"
+                        type="number"
+                        min={1}
+                        max={Math.max(1, words.length)}
+                        value={exactWordInput}
+                        onChange={(e) => setExactWordInput(e.target.value)}
+                        className="w-24 px-2 py-1 text-xs font-mono text-center bg-[#18181c] border border-[#33333c] focus:border-[#FCFD76] focus:outline-none rounded-[8px] text-[#e8e8ec]"
+                        placeholder="Nº"
+                      />
+                      <button
+                        type="submit"
+                        className="px-2.5 py-1 text-xs font-bold bg-[#35325f] hover:bg-[#433f78] text-[#c5c5ef] rounded-[8px] transition-colors cursor-pointer"
+                      >
+                        Ir
+                      </button>
+                    </div>
+                  </form>
                 </div>
 
                 <div className="flex-1 bg-[#18181c] rounded-[16px] p-4 sm:p-6 overflow-y-auto text-sm sm:text-base leading-relaxed text-[#c2c2c9] border border-[#33333c]">

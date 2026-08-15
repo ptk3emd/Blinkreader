@@ -48,15 +48,41 @@ async function safeGet<T>(key: string, fallback: T): Promise<T> {
     const res = await db.getItem<T>(key);
     if (res !== null && res !== undefined) return res;
     if (memoryStore.has(key)) return memoryStore.get(key);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const local = window.localStorage.getItem(`up_${key}`);
+      if (local !== null) {
+        try {
+          return JSON.parse(local) as T;
+        } catch {
+          // ignore parse error
+        }
+      }
+    }
     return fallback;
   } catch (err) {
     console.warn(`Storage get error for key "${key}", falling back:`, err);
-    return memoryStore.has(key) ? memoryStore.get(key) : fallback;
+    if (memoryStore.has(key)) return memoryStore.get(key);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const local = window.localStorage.getItem(`up_${key}`);
+      if (local !== null) {
+        try {
+          return JSON.parse(local) as T;
+        } catch {}
+      }
+    }
+    return fallback;
   }
 }
 
 async function safeSet<T>(key: string, value: T): Promise<void> {
   memoryStore.set(key, value);
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.setItem(`up_${key}`, JSON.stringify(value));
+    } catch {
+      // localStorage quota or disabled
+    }
+  }
   try {
     await db.setItem(key, value);
   } catch (err) {
@@ -66,6 +92,11 @@ async function safeSet<T>(key: string, value: T): Promise<void> {
 
 async function safeRemove(key: string): Promise<void> {
   memoryStore.delete(key);
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      window.localStorage.removeItem(`up_${key}`);
+    } catch {}
+  }
   try {
     await db.removeItem(key);
   } catch (err) {
@@ -92,6 +123,19 @@ export const storage = {
     await safeRemove(`doc_words_${id}`);
     await safeRemove(`doc_progress_${id}`);
     await safeRemove(`doc_bookmarks_${id}`);
+    const recent = await this.getRecentlyRead();
+    await safeSet('recently_read_ids', recent.filter(rId => rId !== id));
+  },
+
+  async getRecentlyRead(): Promise<string[]> {
+    return safeGet<string[]>('recently_read_ids', []);
+  },
+
+  async recordRecentlyRead(id: string): Promise<void> {
+    const current = await this.getRecentlyRead();
+    const filtered = current.filter(existingId => existingId !== id);
+    const updated = [id, ...filtered].slice(0, 10);
+    await safeSet('recently_read_ids', updated);
   },
 
   async getBookmarks(docId: string): Promise<Bookmark[]> {
