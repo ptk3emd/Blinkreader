@@ -77,71 +77,102 @@ export default function Dashboard({ onBack }: DashboardProps) {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-4 md:p-12 w-full">
-      <header className="flex items-center gap-4 mb-8 md:mb-12">
+    <div className="max-w-5xl mx-auto p-5 sm:p-8 md:p-12 w-full">
+      <header className="flex items-center gap-4 mb-8 md:mb-12 pb-6 border-b border-[#33333c]">
         <button 
           onClick={onBack}
-          className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+          className="p-2.5 text-[#9a9aa3] hover:text-[#e8e8ec] hover:bg-[#2a2a32] rounded-[11px] border border-[#33333c] transition-all cursor-pointer"
+          title="Voltar para a biblioteca"
         >
-          <ArrowLeft className="w-6 h-6" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Performance</h1>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#9a9aa3]">
+              Desempenho & Métricas
+            </span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-[-0.03em] text-[#e8e8ec]">
+            Histórico de Leitura
+          </h1>
+        </div>
       </header>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-8 md:mb-12">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-          <div className="flex items-center gap-3 text-zinc-400 mb-2">
-            <TrendingUp className="w-5 h-5 text-amber-500" />
-            <h2 className="font-medium">Average Speed</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5 mb-8 md:mb-12">
+        <div className="bg-[#222228] border border-[#33333c] rounded-[24px] p-6 shadow-none flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-[#9a9aa3]">
+              Velocidade Média
+            </span>
+            <div className="w-8 h-8 rounded-[8px] bg-[#35325f] text-[#c5c5ef] flex items-center justify-center">
+              <TrendingUp className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-4xl font-bold font-mono text-zinc-100">
-            {averageWpm || '--'} <span className="text-lg text-zinc-500">WPM</span>
+          <div className="text-3xl sm:text-4xl font-extrabold font-mono tracking-[-0.04em] text-[#e8e8ec]">
+            {averageWpm || '--'} <span className="text-sm font-semibold text-[#9a9aa3] font-sans">WPM</span>
           </div>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-          <div className="text-zinc-400 mb-2 font-medium">Sessions Tracked</div>
-          <div className="text-4xl font-bold font-mono text-zinc-100">
+
+        <div className="bg-[#222228] border border-[#33333c] rounded-[24px] p-6 shadow-none flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-[#9a9aa3]">
+              Sessões Registradas
+            </span>
+            <div className="w-8 h-8 rounded-[8px] bg-[#28342b] text-[#5fa777] flex items-center justify-center">
+              <span className="text-xs font-bold font-mono">#</span>
+            </div>
+          </div>
+          <div className="text-3xl sm:text-4xl font-extrabold font-mono tracking-[-0.04em] text-[#e8e8ec]">
             {data.length}
           </div>
         </div>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 h-[400px]">
-        <h2 className="text-xl font-bold text-zinc-100 mb-6">WPM Over Time</h2>
+      <div className="bg-[#222228] border border-[#33333c] rounded-[24px] p-6 sm:p-8 h-[420px] flex flex-col">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-extrabold text-[#e8e8ec] tracking-[-0.02em]">
+            Evolução de Velocidade (WPM)
+          </h2>
+          <span className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#c5c5ef] bg-[#35325f] px-3 py-1 rounded-[30px]">
+            Fluxo Contínuo
+          </span>
+        </div>
         
         {data.length > 0 ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-              <XAxis 
-                dataKey="date" 
-                stroke="#52525b" 
-                tick={{ fill: '#71717a', fontSize: 12 }} 
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis 
-                stroke="#52525b" 
-                tick={{ fill: '#71717a', fontSize: 12, fontFamily: 'monospace' }} 
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Line 
-                type="monotone" 
-                dataKey="wpm" 
-                stroke="#f59e0b" 
-                strokeWidth={3}
-                dot={{ fill: '#f59e0b', strokeWidth: 2, r: 4 }}
-                activeDot={{ r: 6, fill: '#fff', stroke: '#f59e0b', strokeWidth: 2 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <div className="flex-1 w-full min-h-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#33333c" vertical={false} />
+                <XAxis 
+                  dataKey="date" 
+                  stroke="#9a9aa3" 
+                  tick={{ fill: '#9a9aa3', fontSize: 12, fontFamily: 'Urbanist' }} 
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis 
+                  stroke="#9a9aa3" 
+                  tick={{ fill: '#9a9aa3', fontSize: 12, fontFamily: 'monospace' }} 
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Line 
+                  type="monotone" 
+                  dataKey="wpm" 
+                  stroke="#FCFD76" 
+                  strokeWidth={3}
+                  dot={{ fill: '#FCFD76', strokeWidth: 2, r: 4 }}
+                  activeDot={{ r: 6, fill: '#212121', stroke: '#FCFD76', strokeWidth: 2 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         ) : (
-          <div className="h-full flex flex-col items-center justify-center text-zinc-500 pb-12">
-            <TrendingUp className="w-12 h-12 mb-4 text-zinc-800" />
-            <p className="text-lg font-medium text-zinc-400">No reading history yet</p>
-            <p className="text-sm">Read a document to track your progress</p>
+          <div className="h-full flex flex-col items-center justify-center text-[#9a9aa3] pb-6">
+            <TrendingUp className="w-10 h-10 mb-3 text-[#33333c]" />
+            <p className="text-base font-bold text-[#c2c2c9]">Nenhum histórico registrado ainda</p>
+            <p className="text-xs text-[#9a9aa3] mt-1">Conclua leituras na biblioteca para gerar o gráfico de evolução.</p>
           </div>
         )}
       </div>

@@ -13,7 +13,7 @@ export default function App() {
   const [view, setView] = useState<'library' | 'dashboard'>('library');
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-amber-500/30">
+    <div className="min-h-screen bg-[#18181c] text-[#e8e8ec] font-sans selection:bg-[#FCFD76] selection:text-[#212121]">
       {activeDocumentId ? (
         <Reader 
           documentId={activeDocumentId} 

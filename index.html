@@ -1,16 +1,20 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BlinkReader</title>
-    <meta name="description" content="Ultra-fast RSVP speed reading application." />
-    <meta property="og:title" content="BlinkReader" />
-    <meta property="og:description" content="Ultra-fast RSVP speed reading application." />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="description" content="Leitor rápido RSVP focado em leitura dinâmica e concentração visual." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Urbanist:ital,wght@0,300..900;1,300..900&display=swap" rel="stylesheet" />
   </head>
-  <body>
+  <body class="bg-[#18181c] text-[#e8e8ec] antialiased">
+    <script>
+      if (typeof window !== 'undefined' && typeof window.global === 'undefined') {
+        window.global = window;
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

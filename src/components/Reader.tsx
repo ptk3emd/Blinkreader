@@ -10,31 +10,31 @@ interface ReaderProps {
 }
 
 const themeClasses: Record<Theme, string> = {
-  dark: 'bg-zinc-950 text-zinc-100',
-  sepia: 'bg-[#F4ECD8] text-[#433422]',
-  solarized: 'bg-[#002b36] text-[#839496]',
-  oled: 'bg-black text-white'
+  dark: 'bg-[#18181c] text-[#e8e8ec]',
+  sepia: 'bg-[#222228] text-[#c2c2c9]',
+  solarized: 'bg-[#1e1e24] text-[#D7D7F4]',
+  oled: 'bg-[#101014] text-[#e8e8ec]'
 };
 
 const themeAccents: Record<Theme, string> = {
-  dark: 'text-amber-500',
-  sepia: 'text-red-700',
-  solarized: 'text-[#2aa198]',
-  oled: 'text-zinc-400'
+  dark: 'text-[#FCFD76]',
+  sepia: 'text-[#F8B7A2]',
+  solarized: 'text-[#c5c5ef]',
+  oled: 'text-[#FCFD76]'
 };
 
 const themeBgAccent: Record<Theme, string> = {
-  dark: 'bg-amber-500',
-  sepia: 'bg-red-700',
-  solarized: 'bg-[#2aa198]',
-  oled: 'bg-zinc-200'
+  dark: 'bg-[#5fa777]',
+  sepia: 'bg-[#F8B7A2]',
+  solarized: 'bg-[#c5c5ef]',
+  oled: 'bg-[#FCFD76]'
 };
 
 const themeBgAlt: Record<Theme, string> = {
-  dark: 'bg-zinc-900',
-  sepia: 'bg-[#E8DFCA]',
-  solarized: 'bg-[#073642]',
-  oled: 'bg-zinc-950'
+  dark: 'bg-[#222228] border-[#33333c]',
+  sepia: 'bg-[#2a2a32] border-[#33333c]',
+  solarized: 'bg-[#262733] border-[#35325f]',
+  oled: 'bg-[#18181c] border-[#33333c]'
 };
 
 export default function Reader({ documentId, onBack }: ReaderProps) {
@@ -386,9 +386,9 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     <div className={cn("flex flex-col h-screen overflow-hidden select-none", themeClasses[theme])} onClick={togglePlay}>
       
       {/* Top Persistent Progress Indicator */}
-      <div className={cn("w-full h-1 relative z-20 shrink-0", themeBgAlt[theme])}>
+      <div className="w-full h-1 relative z-20 shrink-0 bg-[#3a3a44]">
         <div 
-          className={cn("h-full transition-all duration-150 ease-out", themeBgAccent[theme])} 
+          className="h-full transition-all duration-150 ease-out bg-[#5fa777]" 
           style={{ width: `${progressPercent}%` }} 
         />
       </div>
@@ -397,12 +397,12 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       {speedNotification && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 animate-in fade-in slide-in-from-top-3">
           <div className={cn(
-            "flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-mono font-semibold shadow-lg backdrop-blur-md border",
+            "flex items-center gap-2 px-4 py-1.5 rounded-[30px] text-xs sm:text-sm font-semibold shadow-[0_10px_30px_-18px_rgba(0,0,0,0.45)] backdrop-blur-md border",
             speedNotification.type === 'up'
-              ? "bg-emerald-950/90 text-emerald-300 border-emerald-500/40"
-              : "bg-amber-950/90 text-amber-300 border-amber-500/40"
+              ? "bg-[#222228] text-[#5fa777] border-[#28342b]"
+              : "bg-[#222228] text-[#F8B7A2] border-[#653a2c]"
           )}>
-            <Zap className={cn("w-3.5 h-3.5", speedNotification.type === 'up' ? "text-emerald-400 fill-emerald-400" : "text-amber-400 fill-amber-400")} />
+            <Zap className={cn("w-3.5 h-3.5", speedNotification.type === 'up' ? "text-[#5fa777] fill-[#5fa777]" : "text-[#F8B7A2] fill-[#F8B7A2]")} />
             <span>{speedNotification.message}</span>
           </div>
         </div>
@@ -418,24 +418,28 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       >
         <button 
           onClick={onBack}
-          className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-colors px-2 sm:px-3 py-2 -ml-2 sm:-ml-3 rounded-lg"
+          className="flex items-center gap-2 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] transition-all px-3 py-2 rounded-[11px] cursor-pointer"
         >
-          <ArrowLeft className="w-5 h-5" />
-          <span className="font-medium hidden sm:inline">Library</span>
+          <ArrowLeft className="w-4 h-4" />
+          <span className="font-semibold text-xs sm:text-sm hidden sm:inline">Biblioteca</span>
         </button>
         
-        <div className={cn("flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full border border-current opacity-70 order-3 w-full sm:w-auto sm:order-none justify-center", themeBgAlt[theme])}>
-          <button onClick={(e) => { e.stopPropagation(); updateWpm(-25); }} className="hover:opacity-100 p-1 opacity-70" title="Decrease speed (-25 WPM)">
+        <div className="flex items-center gap-2 sm:gap-3 px-3.5 py-1.5 rounded-[30px] border border-[#33333c] bg-[#222228] order-3 w-full sm:w-auto sm:order-none justify-center">
+          <button 
+            onClick={(e) => { e.stopPropagation(); updateWpm(-25); }} 
+            className="p-1 text-[#9a9aa3] hover:text-[#e8e8ec] transition-colors cursor-pointer" 
+            title="Reduzir velocidade (-25 WPM)"
+          >
             <Minus className="w-4 h-4" />
           </button>
           
-          <div className="flex items-center gap-1.5 font-mono font-medium text-base sm:text-lg">
+          <div className="flex items-center gap-1.5 font-mono font-bold text-sm sm:text-base text-[#e8e8ec]">
             <span>{progress.wpm}</span>
-            <span className="text-xs opacity-50">WPM</span>
+            <span className="text-xs text-[#9a9aa3] font-sans font-medium">WPM</span>
             {autoSpeedAdjustment && (
               <span 
-                className="ml-1 text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 flex items-center gap-0.5"
-                title="Adaptive Speed is Active: speeds up during focus flow, slows down on pause/rewind"
+                className="ml-1 text-[10px] uppercase font-extrabold tracking-wider px-2 py-0.5 rounded-[30px] bg-[#35325f] text-[#c5c5ef] flex items-center gap-1"
+                title="Ritmo adaptativo ativo: ajusta velocidade conforme foco e pausas"
               >
                 <Zap className="w-2.5 h-2.5 fill-current" />
                 AUTO
@@ -443,24 +447,30 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
             )}
           </div>
 
-          <button onClick={(e) => { e.stopPropagation(); updateWpm(25); }} className="hover:opacity-100 p-1 opacity-70" title="Increase speed (+25 WPM)">
+          <button 
+            onClick={(e) => { e.stopPropagation(); updateWpm(25); }} 
+            className="p-1 text-[#9a9aa3] hover:text-[#e8e8ec] transition-colors cursor-pointer" 
+            title="Aumentar velocidade (+25 WPM)"
+          >
             <Plus className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-2">
+        <div className="flex items-center gap-2">
           <button 
             onClick={openSettings}
-            className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-colors px-2 sm:px-3 py-2 rounded-lg"
+            className="p-2.5 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] rounded-[11px] transition-all cursor-pointer"
+            title="Configurações de Leitura"
           >
-            <Settings className="w-5 h-5" />
+            <Settings className="w-4 h-4" />
           </button>
           <button 
             onClick={openNav}
-            className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-colors px-2 sm:px-3 py-2 -mr-2 sm:-mr-3 rounded-lg"
+            className="flex items-center gap-2 text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border border-[#33333c] px-3 py-2 rounded-[11px] transition-all cursor-pointer"
+            title="Navegar no texto"
           >
-            <span className="font-medium hidden sm:inline">Navigate</span>
-            <List className="w-5 h-5" />
+            <span className="font-semibold text-xs sm:text-sm hidden sm:inline">Navegar</span>
+            <List className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -475,7 +485,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
         >
           {/* Previous Word (Larger font, lower opacity) */}
           {showContextWords && (
-            <div className="font-mono text-sm sm:text-xl md:text-2xl lg:text-3xl opacity-20 h-8 sm:h-10 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none">
+            <div className="font-mono text-sm sm:text-xl md:text-2xl lg:text-3xl opacity-20 h-8 sm:h-10 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none text-[#c2c2c9]">
               {previousWordText || <span className="opacity-0">—</span>}
             </div>
           )}
@@ -483,26 +493,26 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
           {/* Current RSVP Word */}
           <div className="flex items-baseline font-mono text-[8vw] md:text-7xl lg:text-8xl w-full my-4 sm:my-6">
             {/* Prefix (right-aligned) */}
-            <div className="flex-1 text-right opacity-80">
+            <div className="flex-1 text-right text-[#e8e8ec] opacity-85">
               {formattedWord.prefix}
             </div>
-            {/* ORP (highlighted) */}
-            <div className={cn("font-bold relative shrink-0", themeAccents[theme])}>
-              {/* Crosshair indicator lines (positioned with safe margin to avoid overlapping characters and context words) */}
-              <div className="absolute -top-3.5 sm:-top-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-40 rounded-full pointer-events-none"></div>
-              <div className="absolute -bottom-3.5 sm:-bottom-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-40 rounded-full pointer-events-none"></div>
+            {/* ORP (highlighted in highlighter yellow or theme accent) */}
+            <div className={cn("font-extrabold relative shrink-0", themeAccents[theme])}>
+              {/* Crosshair indicator lines */}
+              <div className="absolute -top-3.5 sm:-top-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-60 rounded-full pointer-events-none"></div>
+              <div className="absolute -bottom-3.5 sm:-bottom-4.5 left-1/2 -translate-x-1/2 w-0.5 h-2 sm:h-2.5 bg-current opacity-60 rounded-full pointer-events-none"></div>
               
               {formattedWord.orp}
             </div>
             {/* Suffix (left-aligned) */}
-            <div className="flex-1 text-left opacity-80">
+            <div className="flex-1 text-left text-[#e8e8ec] opacity-85">
               {formattedWord.suffix}
             </div>
           </div>
 
           {/* Next Word (Larger font, lower opacity) */}
           {showContextWords && (
-            <div className="font-mono text-sm sm:text-xl md:text-2xl lg:text-3xl opacity-20 h-8 sm:h-10 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none">
+            <div className="font-mono text-sm sm:text-xl md:text-2xl lg:text-3xl opacity-20 h-8 sm:h-10 flex items-center justify-center text-center px-4 tracking-normal transition-opacity duration-150 pointer-events-none text-[#c2c2c9]">
               {nextWordText || <span className="opacity-0">—</span>}
             </div>
           )}
@@ -513,42 +523,36 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       <div 
         className={cn(
           "w-full max-w-xl mx-auto px-6 transition-opacity duration-300 z-10",
-          isPlaying ? "opacity-35 hover:opacity-100" : "opacity-100"
+          isPlaying ? "opacity-30 hover:opacity-100" : "opacity-100"
         )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Progress labels */}
-        <div className="flex items-center justify-between text-xs sm:text-sm font-mono opacity-80 mb-2 select-none">
+        <div className="flex items-center justify-between text-xs font-mono text-[#9a9aa3] mb-2 select-none">
           <span className="font-medium">
-            Word <span className={cn("font-bold", themeAccents[theme])}>{currentWordDisplayNum.toLocaleString()}</span> of {words.length.toLocaleString()}
+            Palavra <span className="font-bold text-[#FCFD76]">{currentWordDisplayNum.toLocaleString()}</span> de {words.length.toLocaleString()}
           </span>
-          <span className="font-bold px-2 py-0.5 rounded bg-current/10">
+          <span className="font-extrabold px-2 py-0.5 rounded-[30px] bg-[#35325f] text-[#c5c5ef]">
             {Math.round(progressPercent)}%
           </span>
           <span>
-            {wordsLeft === 0 ? 'Finished' : `~${minutesLeft} min left`}
+            {wordsLeft === 0 ? 'Concluído' : `~${minutesLeft} min restantes`}
           </span>
         </div>
 
         {/* Interactive Progress Track */}
         <div 
-          className={cn(
-            "group relative h-2.5 sm:h-3 rounded-full cursor-pointer transition-all hover:h-4 flex items-center shadow-inner",
-            themeBgAlt[theme]
-          )}
+          className="group relative h-2.5 sm:h-3 rounded-full cursor-pointer transition-all hover:h-3.5 flex items-center bg-[#3a3a44] border border-[#33333c]"
           onClick={handleProgressSeek}
-          title="Click to jump to this point in document"
+          title="Clique para navegar no texto"
         >
           {/* Progress fill */}
           <div 
-            className={cn(
-              "h-full rounded-full transition-all duration-150 ease-out relative",
-              themeBgAccent[theme]
-            )}
+            className="h-full rounded-full transition-all duration-150 ease-out relative bg-[#5fa777]"
             style={{ width: `${progressPercent}%` }}
           >
             {/* Scrubber thumb */}
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-4 h-4 rounded-full bg-white shadow-md border-2 border-zinc-900 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3.5 h-3.5 rounded-full bg-[#FCFD76] shadow-md border-2 border-[#18181c] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
           </div>
         </div>
       </div>
@@ -556,59 +560,69 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       {/* Bottom Controls */}
       <div 
         className={cn(
-          "p-4 sm:p-6 flex justify-center items-center gap-6 sm:gap-8 transition-opacity duration-300",
+          "p-5 sm:p-7 flex justify-center items-center gap-6 sm:gap-8 transition-opacity duration-300",
           isPlaying ? "opacity-0 pointer-events-none" : "opacity-100"
         )}
         onClick={(e) => e.stopPropagation()}
       >
         <button 
           onClick={() => jumpWords(-10)}
-          className={cn("transition-colors p-3 rounded-full opacity-60 hover:opacity-100", themeBgAlt[theme])}
+          className="p-3.5 rounded-full bg-[#222228] border border-[#33333c] text-[#c2c2c9] hover:text-[#e8e8ec] hover:bg-[#2a2a32] transition-all hover:-translate-y-0.5 cursor-pointer shadow-none"
+          title="Recuar 10 palavras"
         >
-          <ChevronLeft className="w-6 h-6 sm:w-8 sm:h-8" />
+          <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
 
         <button 
           onClick={togglePlay}
-          className={cn("w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 text-current", themeBgAlt[theme], "brightness-125")}
+          className="w-16 h-16 sm:w-18 sm:h-18 rounded-full flex items-center justify-center bg-[#FCFD76] hover:bg-[#eef05a] text-[#212121] transition-all hover:-translate-y-0.5 active:scale-95 shadow-[0_10px_30px_-18px_rgba(0,0,0,0.45)] cursor-pointer"
+          title={isPlaying ? "Pausar (Espaço)" : "Iniciar Leitura (Espaço)"}
         >
-          {isPlaying ? <Pause className="w-6 h-6 sm:w-8 sm:h-8 fill-current" /> : <Play className="w-6 h-6 sm:w-8 sm:h-8 fill-current ml-1" />}
+          {isPlaying ? <Pause className="w-6 h-6 sm:w-7 sm:h-7 fill-current" /> : <Play className="w-6 h-6 sm:w-7 sm:h-7 fill-current ml-0.5" />}
         </button>
 
         <button 
           onClick={() => jumpWords(10)}
-          className={cn("transition-colors p-3 rounded-full opacity-60 hover:opacity-100", themeBgAlt[theme])}
+          className="p-3.5 rounded-full bg-[#222228] border border-[#33333c] text-[#c2c2c9] hover:text-[#e8e8ec] hover:bg-[#2a2a32] transition-all hover:-translate-y-0.5 cursor-pointer shadow-none"
+          title="Avançar 10 palavras"
         >
-          <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8" />
+          <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
         </button>
       </div>
       
       {/* Navigation Modal */}
       {showNav && (
         <div 
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col p-4 md:p-12 animate-in fade-in"
+          className="fixed inset-0 z-50 bg-[rgba(20,20,40,0.6)] backdrop-blur-sm flex flex-col p-4 md:p-10 animate-in fade-in"
           onClick={(e) => { e.stopPropagation(); setShowNav(false); }}
         >
           <div 
-            className="flex flex-col bg-zinc-950 border border-zinc-800 rounded-2xl sm:rounded-3xl w-full max-w-6xl mx-auto h-full overflow-hidden shadow-2xl relative"
+            className="flex flex-col bg-[#222228] border border-[#33333c] rounded-[24px] w-full max-w-5xl mx-auto h-full overflow-hidden shadow-[0_18px_40px_-22px_rgba(0,0,0,0.55)] relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-zinc-900">
-              <h2 className="text-xl sm:text-2xl font-bold text-zinc-100">Navigate Text</h2>
+            <div className="flex items-center justify-between p-5 sm:p-6 border-b border-[#33333c]">
+              <div>
+                <span className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#9a9aa3]">
+                  Navegação
+                </span>
+                <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-[#e8e8ec]">
+                  Localizar no Texto
+                </h2>
+              </div>
               <button 
                 onClick={() => setShowNav(false)}
-                className="p-2 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-900 rounded-full transition-colors"
+                className="p-2 text-[#9a9aa3] hover:text-[#e8e8ec] hover:bg-[#2a2a32] rounded-[11px] border border-[#33333c] transition-colors cursor-pointer"
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               </button>
             </div>
             
             <div className="flex-1 flex overflow-hidden">
               
               {/* TOC Sidebar */}
-              <div className="hidden md:flex w-64 border-r border-zinc-900 bg-zinc-950/50 flex-col p-4 overflow-y-auto">
-                <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4 px-2">Summary</h3>
-                <div className="flex flex-col gap-1">
+              <div className="hidden md:flex w-64 border-r border-[#33333c] bg-[#1e1e24] flex-col p-4 overflow-y-auto">
+                <h3 className="text-[11px] font-extrabold text-[#9a9aa3] uppercase tracking-[0.12em] mb-4 px-2">Capítulos / Seções</h3>
+                <div className="flex flex-col gap-1.5">
                   {toc.map((item, i) => {
                     const isActive = navPreviewIndex >= item.index && (i === toc.length - 1 || navPreviewIndex < toc[i+1].index);
                     return (
@@ -616,8 +630,8 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                         key={i}
                         onClick={() => setNavPreviewIndex(item.index)}
                         className={cn(
-                          "text-left px-3 py-2 rounded-lg text-sm transition-colors", 
-                          isActive ? "bg-amber-500/10 text-amber-500 font-medium" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                          "text-left px-3 py-2 rounded-[10px] text-xs sm:text-sm transition-colors cursor-pointer", 
+                          isActive ? "bg-[#35325f] text-[#c5c5ef] font-bold" : "text-[#9a9aa3] hover:bg-[#2a2a32] hover:text-[#e8e8ec]"
                         )}
                       >
                         {item.label}
@@ -630,9 +644,9 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
               {/* Right side Text Preview & Scrubber */}
               <div className="flex-1 flex flex-col p-4 sm:p-6 overflow-hidden">
                 <div className="mb-4 sm:mb-6 flex flex-col gap-2">
-                  <div className="flex justify-between text-sm font-mono text-zinc-500">
+                  <div className="flex justify-between text-xs font-mono text-[#9a9aa3]">
                     <span>0%</span>
-                    <span className="text-amber-500 font-bold">{Math.round((navPreviewIndex / Math.max(1, words.length - 1)) * 100)}%</span>
+                    <span className="text-[#FCFD76] font-bold font-mono">{Math.round((navPreviewIndex / Math.max(1, words.length - 1)) * 100)}%</span>
                     <span>100%</span>
                   </div>
                   <input 
@@ -641,14 +655,14 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                     max={Math.max(0, words.length - 1)} 
                     value={navPreviewIndex} 
                     onChange={(e) => setNavPreviewIndex(Number(e.target.value))}
-                    className="w-full accent-amber-500 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
+                    className="w-full accent-[#FCFD76] cursor-pointer h-2 bg-[#3a3a44] rounded-lg appearance-none"
                   />
-                  <div className="text-center text-xs text-zinc-600 mt-1 font-mono">
-                    Word {navPreviewIndex.toLocaleString()} of {words.length.toLocaleString()}
+                  <div className="text-center text-xs text-[#9a9aa3] mt-1 font-mono">
+                    Palavra {navPreviewIndex.toLocaleString()} de {words.length.toLocaleString()}
                   </div>
                 </div>
 
-                <div className="flex-1 bg-zinc-900 rounded-xl sm:rounded-2xl p-4 sm:p-6 overflow-y-auto text-base sm:text-lg leading-relaxed text-zinc-400 border border-zinc-800/50 shadow-inner">
+                <div className="flex-1 bg-[#18181c] rounded-[16px] p-5 sm:p-6 overflow-y-auto text-sm sm:text-base leading-relaxed text-[#c2c2c9] border border-[#33333c]">
                   {(() => {
                     const startIdx = Math.max(0, navPreviewIndex - 100);
                     const endIdx = Math.min(words.length, navPreviewIndex + 300);
@@ -656,7 +670,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                     
                     return (
                       <>
-                        {startIdx > 0 && <span className="text-zinc-600 mr-2">...</span>}
+                        {startIdx > 0 && <span className="text-[#9a9aa3] mr-2">...</span>}
                         {previewWords.map((word, i) => {
                           const actualIndex = startIdx + i;
                           const isSelected = actualIndex === navPreviewIndex;
@@ -669,17 +683,17 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                                 setTimeout(jumpToNavIndex, 0);
                               }}
                               className={cn(
-                                "cursor-pointer transition-colors duration-100", 
+                                "cursor-pointer transition-colors duration-100 rounded-[4px] px-0.5", 
                                 isSelected 
-                                  ? "text-amber-500 font-bold bg-amber-500/20 px-1 rounded-sm mx-0.5" 
-                                  : "hover:text-zinc-200 hover:bg-zinc-800 rounded-sm"
+                                  ? "text-[#212121] font-bold bg-[#FCFD76] px-1 mx-0.5" 
+                                  : "hover:text-[#e8e8ec] hover:bg-[#2a2a32]"
                               )}
                             >
                               {word}{' '}
                             </span>
                           );
                         })}
-                        {endIdx < words.length && <span className="text-zinc-600 ml-2">...</span>}
+                        {endIdx < words.length && <span className="text-[#9a9aa3] ml-2">...</span>}
                       </>
                     );
                   })()}
@@ -687,12 +701,12 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
               </div>
             </div>
 
-            <div className="p-4 sm:p-6 border-t border-zinc-900 bg-zinc-950 flex justify-end">
+            <div className="p-4 sm:p-6 border-t border-[#33333c] bg-[#1e1e24] flex justify-end">
               <button 
                 onClick={jumpToNavIndex}
-                className="px-6 py-3 sm:px-8 bg-amber-600 hover:bg-amber-500 text-amber-50 rounded-xl font-bold transition-transform active:scale-95 shadow-lg w-full sm:w-auto text-center"
+                className="px-6 py-2.5 sm:px-8 bg-[#FCFD76] hover:bg-[#eef05a] text-[#212121] rounded-[12px] font-bold transition-all hover:-translate-y-0.5 shadow-none w-full sm:w-auto text-center cursor-pointer"
               >
-                Jump to this point
+                Continuar a partir daqui
               </button>
             </div>
           </div>
@@ -702,85 +716,90 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
       {/* Settings Modal */}
       {showSettings && (
         <div 
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in"
+          className="fixed inset-0 z-50 bg-[rgba(20,20,40,0.6)] backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
           onClick={(e) => { e.stopPropagation(); setShowSettings(false); }}
         >
           <div 
-            className="flex flex-col bg-zinc-950 border border-zinc-800 rounded-2xl sm:rounded-3xl w-full max-w-md mx-auto overflow-hidden shadow-2xl relative"
+            className="flex flex-col bg-[#222228] border border-[#33333c] rounded-[24px] w-full max-w-md mx-auto overflow-hidden shadow-[0_18px_40px_-22px_rgba(0,0,0,0.55)] relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 sm:p-6 border-b border-zinc-900">
-              <h2 className="text-xl sm:text-2xl font-bold text-zinc-100">Settings</h2>
+            <div className="flex items-center justify-between p-5 sm:p-6 border-b border-[#33333c]">
+              <div>
+                <span className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#9a9aa3]">
+                  Preferências
+                </span>
+                <h2 className="text-xl font-extrabold tracking-tight text-[#e8e8ec]">Configurações</h2>
+              </div>
               <button 
                 onClick={() => setShowSettings(false)}
-                className="p-2 text-zinc-500 hover:text-zinc-100 hover:bg-zinc-900 rounded-full transition-colors"
+                className="p-2 text-[#9a9aa3] hover:text-[#e8e8ec] hover:bg-[#2a2a32] rounded-[11px] border border-[#33333c] transition-colors cursor-pointer"
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="p-6">
-              <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Reading Theme</h3>
-              <div className="grid grid-cols-2 gap-3 mb-8">
+            <div className="p-6 overflow-y-auto max-h-[75vh]">
+              <h3 className="text-[11px] font-extrabold text-[#9a9aa3] uppercase tracking-[0.12em] mb-3">Ambiente de Leitura</h3>
+              <div className="grid grid-cols-2 gap-3 mb-6">
                 <button
                   onClick={() => updateTheme('dark')}
                   className={cn(
-                    "flex flex-col items-center p-4 rounded-xl border-2 transition-all",
-                    theme === 'dark' ? "border-amber-500 bg-amber-500/10" : "border-zinc-800 bg-zinc-900 hover:border-zinc-600"
+                    "flex flex-col items-center p-3.5 rounded-[16px] border transition-all cursor-pointer",
+                    theme === 'dark' ? "border-[#FCFD76] bg-[#514a19]/30" : "border-[#33333c] bg-[#18181c] hover:border-[#474182]"
                   )}
                 >
-                  <div className="w-full h-12 bg-zinc-950 rounded-md border border-zinc-800 flex items-center justify-center mb-3">
-                    <span className="text-zinc-100 font-mono text-xl"><span className="opacity-50">T</span><span className="text-amber-500 font-bold">h</span><span className="opacity-50">e</span></span>
+                  <div className="w-full h-10 bg-[#18181c] rounded-[8px] border border-[#33333c] flex items-center justify-center mb-2">
+                    <span className="text-[#e8e8ec] font-mono text-base"><span className="opacity-50">T</span><span className="text-[#FCFD76] font-bold">h</span><span className="opacity-50">e</span></span>
                   </div>
-                  <span className="text-zinc-100 font-medium">Dark</span>
+                  <span className="text-xs font-bold text-[#e8e8ec]">Escuro Padrão</span>
                 </button>
                 
                 <button
                   onClick={() => updateTheme('sepia')}
                   className={cn(
-                    "flex flex-col items-center p-4 rounded-xl border-2 transition-all",
-                    theme === 'sepia' ? "border-amber-500 bg-amber-500/10" : "border-zinc-800 bg-zinc-900 hover:border-zinc-600"
+                    "flex flex-col items-center p-3.5 rounded-[16px] border transition-all cursor-pointer",
+                    theme === 'sepia' ? "border-[#F8B7A2] bg-[#653a2c]/30" : "border-[#33333c] bg-[#18181c] hover:border-[#474182]"
                   )}
                 >
-                  <div className="w-full h-12 bg-[#F4ECD8] rounded-md border border-[#E8DFCA] flex items-center justify-center mb-3">
-                    <span className="text-[#433422] font-mono text-xl"><span className="opacity-50">T</span><span className="text-red-700 font-bold">h</span><span className="opacity-50">e</span></span>
+                  <div className="w-full h-10 bg-[#222228] rounded-[8px] border border-[#33333c] flex items-center justify-center mb-2">
+                    <span className="text-[#c2c2c9] font-mono text-base"><span className="opacity-50">T</span><span className="text-[#F8B7A2] font-bold">h</span><span className="opacity-50">e</span></span>
                   </div>
-                  <span className="text-zinc-100 font-medium">Sepia</span>
+                  <span className="text-xs font-bold text-[#e8e8ec]">Sépia Conforto</span>
                 </button>
 
                 <button
                   onClick={() => updateTheme('solarized')}
                   className={cn(
-                    "flex flex-col items-center p-4 rounded-xl border-2 transition-all",
-                    theme === 'solarized' ? "border-amber-500 bg-amber-500/10" : "border-zinc-800 bg-zinc-900 hover:border-zinc-600"
+                    "flex flex-col items-center p-3.5 rounded-[16px] border transition-all cursor-pointer",
+                    theme === 'solarized' ? "border-[#c5c5ef] bg-[#35325f]/30" : "border-[#33333c] bg-[#18181c] hover:border-[#474182]"
                   )}
                 >
-                  <div className="w-full h-12 bg-[#002b36] rounded-md border border-[#073642] flex items-center justify-center mb-3">
-                    <span className="text-[#839496] font-mono text-xl"><span className="opacity-50">T</span><span className="text-[#2aa198] font-bold">h</span><span className="opacity-50">e</span></span>
+                  <div className="w-full h-10 bg-[#1e1e24] rounded-[8px] border border-[#35325f] flex items-center justify-center mb-2">
+                    <span className="text-[#D7D7F4] font-mono text-base"><span className="opacity-50">T</span><span className="text-[#c5c5ef] font-bold">h</span><span className="opacity-50">e</span></span>
                   </div>
-                  <span className="text-zinc-100 font-medium">Solarized</span>
+                  <span className="text-xs font-bold text-[#e8e8ec]">Lavanda Foco</span>
                 </button>
 
                 <button
                   onClick={() => updateTheme('oled')}
                   className={cn(
-                    "flex flex-col items-center p-4 rounded-xl border-2 transition-all",
-                    theme === 'oled' ? "border-amber-500 bg-amber-500/10" : "border-zinc-800 bg-zinc-900 hover:border-zinc-600"
+                    "flex flex-col items-center p-3.5 rounded-[16px] border transition-all cursor-pointer",
+                    theme === 'oled' ? "border-[#FCFD76] bg-[#514a19]/30" : "border-[#33333c] bg-[#18181c] hover:border-[#474182]"
                   )}
                 >
-                  <div className="w-full h-12 bg-black rounded-md border border-zinc-900 flex items-center justify-center mb-3">
-                    <span className="text-white font-mono text-xl"><span className="opacity-50">T</span><span className="text-zinc-400 font-bold">h</span><span className="opacity-50">e</span></span>
+                  <div className="w-full h-10 bg-[#101014] rounded-[8px] border border-[#33333c] flex items-center justify-center mb-2">
+                    <span className="text-[#e8e8ec] font-mono text-base"><span className="opacity-50">T</span><span className="text-[#FCFD76] font-bold">h</span><span className="opacity-50">e</span></span>
                   </div>
-                  <span className="text-zinc-100 font-medium">OLED Black</span>
+                  <span className="text-xs font-bold text-[#e8e8ec]">OLED Profundo</span>
                 </button>
               </div>
 
-              <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Text Size</h3>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 mb-8">
-                <div className="flex items-center justify-between text-zinc-400 mb-4">
-                  <span className="text-sm">Smaller</span>
-                  <span className="font-mono text-amber-500 font-bold">{fontSize}%</span>
-                  <span className="text-lg font-bold">Larger</span>
+              <h3 className="text-[11px] font-extrabold text-[#9a9aa3] uppercase tracking-[0.12em] mb-3">Tamanho da Fonte</h3>
+              <div className="bg-[#18181c] border border-[#33333c] rounded-[14px] p-4 mb-6">
+                <div className="flex items-center justify-between text-[#9a9aa3] mb-3 text-xs font-semibold">
+                  <span>Menor</span>
+                  <span className="font-mono text-[#FCFD76] font-bold text-sm">{fontSize}%</span>
+                  <span>Maior</span>
                 </div>
                 <input 
                   type="range" 
@@ -789,51 +808,51 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                   step="5"
                   value={fontSize}
                   onChange={(e) => updateFontSize(Number(e.target.value))}
-                  className="w-full accent-amber-500 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
+                  className="w-full accent-[#FCFD76] cursor-pointer h-2 bg-[#3a3a44] rounded-lg appearance-none"
                 />
               </div>
 
-              <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Reading Context</h3>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center justify-between mb-8">
+              <h3 className="text-[11px] font-extrabold text-[#9a9aa3] uppercase tracking-[0.12em] mb-3">Contexto de Palavras</h3>
+              <div className="bg-[#18181c] border border-[#33333c] rounded-[14px] p-4 flex items-center justify-between mb-6">
                 <div className="flex flex-col pr-4">
-                  <span className="text-zinc-100 font-medium text-sm sm:text-base">Show Previous & Next Word</span>
-                  <span className="text-xs text-zinc-500 mt-0.5">Display adjacent words in smaller font and reduced opacity</span>
+                  <span className="text-[#e8e8ec] font-bold text-xs sm:text-sm">Palavra Anterior & Posterior</span>
+                  <span className="text-[11px] text-[#9a9aa3] mt-0.5">Exibe adjacentes em menor opacidade para visão periférica</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => updateShowContextWords(!showContextWords)}
                   className={cn(
-                    "w-12 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors duration-200 cursor-pointer",
-                    showContextWords ? "bg-amber-600 justify-end" : "bg-zinc-800 justify-start"
+                    "w-12 h-6 shrink-0 flex items-center rounded-[30px] p-1 transition-colors duration-200 cursor-pointer",
+                    showContextWords ? "bg-[#35325f] justify-end" : "bg-[#3a3a44] justify-start"
                   )}
-                  aria-label="Toggle context words"
+                  aria-label="Alternar palavras de contexto"
                 >
                   <div className="bg-white w-4 h-4 rounded-full shadow-md" />
                 </button>
               </div>
 
-              <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Adaptive Speed (Auto WPM)</h3>
-              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center justify-between">
+              <h3 className="text-[11px] font-extrabold text-[#9a9aa3] uppercase tracking-[0.12em] mb-3">Velocidade Adaptativa (Auto WPM)</h3>
+              <div className="bg-[#18181c] border border-[#33333c] rounded-[14px] p-4 flex items-center justify-between">
                 <div className="flex flex-col pr-4">
                   <div className="flex items-center gap-2">
-                    <span className="text-zinc-100 font-medium text-sm sm:text-base">Auto-Adjust Speed</span>
-                    <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 flex items-center gap-0.5">
+                    <span className="text-[#e8e8ec] font-bold text-xs sm:text-sm">Ajuste Inteligente de Ritmo</span>
+                    <span className="text-[9px] uppercase font-extrabold tracking-wider px-1.5 py-0.5 rounded-[30px] bg-[#35325f] text-[#c5c5ef] flex items-center gap-0.5">
                       <Zap className="w-2.5 h-2.5 fill-current" />
                       Smart
                     </span>
                   </div>
-                  <span className="text-xs text-zinc-500 mt-1">
-                    Subtly accelerates (+5 WPM) during continuous focus streaks and dials back (-10 WPM) on pauses or rewinds.
+                  <span className="text-[11px] text-[#9a9aa3] mt-1">
+                    Acelera suavemente (+5 WPM) em fluxo contínuo e desacelera (-10 WPM) em pausas e recuos.
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => updateAutoSpeedAdjustment(!autoSpeedAdjustment)}
                   className={cn(
-                    "w-12 h-6 shrink-0 flex items-center rounded-full p-1 transition-colors duration-200 cursor-pointer",
-                    autoSpeedAdjustment ? "bg-amber-600 justify-end" : "bg-zinc-800 justify-start"
+                    "w-12 h-6 shrink-0 flex items-center rounded-[30px] p-1 transition-colors duration-200 cursor-pointer",
+                    autoSpeedAdjustment ? "bg-[#35325f] justify-end" : "bg-[#3a3a44] justify-start"
                   )}
-                  aria-label="Toggle auto speed adjustment"
+                  aria-label="Alternar ajuste de velocidade"
                 >
                   <div className="bg-white w-4 h-4 rounded-full shadow-md" />
                 </button>

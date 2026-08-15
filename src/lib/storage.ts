@@ -27,69 +27,100 @@ export interface WpmHistory {
   wpm: number;
 }
 
+// In-memory fallback in case IndexedDB/localStorage is blocked
+const memoryStore = new Map<string, any>();
+
 const db = localforage.createInstance({
   name: 'BlinkReader',
+  driver: [localforage.INDEXEDDB, localforage.WEBSQL, localforage.LOCALSTORAGE],
 });
+
+async function safeGet<T>(key: string, fallback: T): Promise<T> {
+  try {
+    const res = await db.getItem<T>(key);
+    if (res !== null && res !== undefined) return res;
+    if (memoryStore.has(key)) return memoryStore.get(key);
+    return fallback;
+  } catch (err) {
+    console.warn(`Storage get error for key "${key}", falling back:`, err);
+    return memoryStore.has(key) ? memoryStore.get(key) : fallback;
+  }
+}
+
+async function safeSet<T>(key: string, value: T): Promise<void> {
+  memoryStore.set(key, value);
+  try {
+    await db.setItem(key, value);
+  } catch (err) {
+    console.warn(`Storage set error for key "${key}":`, err);
+  }
+}
+
+async function safeRemove(key: string): Promise<void> {
+  memoryStore.delete(key);
+  try {
+    await db.removeItem(key);
+  } catch (err) {
+    console.warn(`Storage remove error for key "${key}":`, err);
+  }
+}
 
 export const storage = {
   async getDocuments(): Promise<DocumentMeta[]> {
-    const docs = await db.getItem<DocumentMeta[]>('documents');
-    return docs || [];
+    return safeGet<DocumentMeta[]>('documents', []);
   },
 
   async addDocument(meta: DocumentMeta, words: string[]): Promise<void> {
     const docs = await this.getDocuments();
     docs.push(meta);
-    await db.setItem('documents', docs);
-    await db.setItem(`doc_words_${meta.id}`, words);
-    await db.setItem(`doc_progress_${meta.id}`, { currentWordIndex: 0, wpm: 300 });
+    await safeSet('documents', docs);
+    await safeSet(`doc_words_${meta.id}`, words);
+    await safeSet(`doc_progress_${meta.id}`, { currentWordIndex: 0, wpm: 300 });
   },
 
   async deleteDocument(id: string): Promise<void> {
     const docs = await this.getDocuments();
-    await db.setItem('documents', docs.filter(d => d.id !== id));
-    await db.removeItem(`doc_words_${id}`);
-    await db.removeItem(`doc_progress_${id}`);
+    await safeSet('documents', docs.filter(d => d.id !== id));
+    await safeRemove(`doc_words_${id}`);
+    await safeRemove(`doc_progress_${id}`);
   },
 
   async getDocumentWords(id: string): Promise<string[] | null> {
-    return db.getItem<string[]>(`doc_words_${id}`);
+    return safeGet<string[] | null>(`doc_words_${id}`, null);
   },
 
   async getDocumentProgress(id: string): Promise<DocumentProgress> {
-    const progress = await db.getItem<DocumentProgress>(`doc_progress_${id}`);
-    return progress || { currentWordIndex: 0, wpm: 300 };
+    return safeGet<DocumentProgress>(`doc_progress_${id}`, { currentWordIndex: 0, wpm: 300 });
   },
 
   async updateDocumentProgress(id: string, progress: Partial<DocumentProgress>): Promise<void> {
     const current = await this.getDocumentProgress(id);
-    await db.setItem(`doc_progress_${id}`, { ...current, ...progress });
+    await safeSet(`doc_progress_${id}`, { ...current, ...progress });
   },
 
   async getWpmHistory(): Promise<WpmHistory[]> {
-    const history = await db.getItem<WpmHistory[]>('wpm_history');
-    return history || [];
+    return safeGet<WpmHistory[]>('wpm_history', []);
   },
 
   async addWpmHistory(wpm: number): Promise<void> {
     const history = await this.getWpmHistory();
     history.push({ timestamp: Date.now(), wpm });
-    await db.setItem('wpm_history', history);
+    await safeSet('wpm_history', history);
   },
 
   async getSettings(): Promise<UserSettings> {
-    const settings = await db.getItem<UserSettings>('user_settings');
+    const settings = await safeGet<Partial<UserSettings>>('user_settings', {});
     return {
       theme: 'dark',
       fontSize: 100,
       showContextWords: true,
       autoSpeedAdjustment: true,
-      ...(settings || {})
+      ...settings,
     };
   },
 
   async updateSettings(settings: Partial<UserSettings>): Promise<void> {
     const current = await this.getSettings();
-    await db.setItem('user_settings', { ...current, ...settings });
-  }
+    await safeSet('user_settings', { ...current, ...settings });
+  },
 };
