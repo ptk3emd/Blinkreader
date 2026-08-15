@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { 
-  Columns2, Rows2, X, ZoomIn, ZoomOut, Compass, 
-  ChevronUp, ChevronDown, Sparkles 
+  X, Minus, Plus, Compass, AlignLeft, FileText
 } from 'lucide-react';
 import { Theme } from '../lib/storage';
 import { ParagraphData, findParagraphIndex } from '../lib/paragraph';
@@ -16,13 +15,6 @@ interface ParagraphSplitViewProps {
   isPlaying: boolean;
 }
 
-const themeBorder: Record<Theme, string> = {
-  dark: 'border-[#33333c]',
-  sepia: 'border-[#33333c]',
-  solarized: 'border-[#35325f]',
-  oled: 'border-[#282830]',
-};
-
 const themeActiveHighlight: Record<Theme, {
   bg: string;
   text: string;
@@ -32,26 +24,26 @@ const themeActiveHighlight: Record<Theme, {
   dark: {
     bg: 'bg-[#FCFD76]',
     text: 'text-[#18181c]',
-    ring: 'ring-[#FCFD76]/70',
-    glow: 'shadow-[0_0_12px_rgba(252,253,118,0.55)]',
+    ring: 'ring-[#FCFD76]/60',
+    glow: 'shadow-[0_0_8px_rgba(252,253,118,0.4)]',
   },
   sepia: {
     bg: 'bg-[#F8B7A2]',
     text: 'text-[#1e1713]',
-    ring: 'ring-[#F8B7A2]/70',
-    glow: 'shadow-[0_0_12px_rgba(248,183,162,0.5)]',
+    ring: 'ring-[#F8B7A2]/60',
+    glow: 'shadow-[0_0_8px_rgba(248,183,162,0.35)]',
   },
   solarized: {
     bg: 'bg-[#c5c5ef]',
     text: 'text-[#191928]',
-    ring: 'ring-[#c5c5ef]/70',
-    glow: 'shadow-[0_0_12px_rgba(197,197,239,0.5)]',
+    ring: 'ring-[#c5c5ef]/60',
+    glow: 'shadow-[0_0_8px_rgba(197,197,239,0.35)]',
   },
   oled: {
     bg: 'bg-[#FCFD76]',
     text: 'text-[#0a0a0c]',
-    ring: 'ring-[#FCFD76]/80',
-    glow: 'shadow-[0_0_14px_rgba(252,253,118,0.7)]',
+    ring: 'ring-[#FCFD76]/70',
+    glow: 'shadow-[0_0_10px_rgba(252,253,118,0.5)]',
   },
 };
 
@@ -75,23 +67,10 @@ export default function ParagraphSplitView({
     return findParagraphIndex(paragraphs, currentWordIndex);
   }, [paragraphs, currentWordIndex]);
 
-  const activeParagraph = paragraphs[currentParaIndex];
-
-  // Calculate paragraph progress
-  const paraProgress = useMemo(() => {
-    if (!activeParagraph) return { current: 1, total: 1, percent: 0 };
-    const paraLength = activeParagraph.words.length || 1;
-    const offset = Math.max(0, currentWordIndex - activeParagraph.startIndex);
-    const current = Math.min(paraLength, offset + 1);
-    const percent = Math.min(100, Math.round((current / paraLength) * 100));
-    return { current, total: paraLength, percent };
-  }, [activeParagraph, currentWordIndex]);
-
   // Keep active word centered in view
   useEffect(() => {
     if (!autoScroll || !activeWordElementRef.current || !containerRef.current) return;
     
-    // Smoothly scroll active word into viewport
     activeWordElementRef.current.scrollIntoView({
       behavior: isPlaying ? 'smooth' : 'auto',
       block: 'center',
@@ -99,7 +78,7 @@ export default function ParagraphSplitView({
     });
   }, [currentWordIndex, autoScroll, isPlaying]);
 
-  // Which paragraphs to render
+  // Visible paragraphs based on mode
   const visibleParagraphs = useMemo(() => {
     if (showFullDocument) {
       return paragraphs;
@@ -114,72 +93,69 @@ export default function ParagraphSplitView({
 
   return (
     <div 
-      className={cn(
-        "flex flex-col h-full w-full bg-[#1b1b20]/95 backdrop-blur-md border rounded-[20px] overflow-hidden shadow-2xl transition-all duration-300",
-        themeBorder[theme]
-      )}
+      className="flex flex-col h-full w-full bg-[#18181c]/90 backdrop-blur-sm border border-[#2c2c34] rounded-[16px] overflow-hidden transition-all"
       onClick={(e) => e.stopPropagation()}
     >
-      {/* Split View Header */}
-      <div className="flex items-center justify-between px-3.5 sm:px-5 py-2.5 sm:py-3 border-b border-[#33333c] bg-[#16161a] shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-7 h-7 rounded-[9px] bg-[#35325f] text-[#c5c5ef]">
-            <Sparkles className="w-3.5 h-3.5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-bold text-[#e8e8ec]">Acompanhamento de Parágrafo</span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-[6px] bg-[#222228] border border-[#33333c] text-[#FCFD76] font-semibold">
-                {currentParaIndex + 1}/{paragraphs.length}
-              </span>
-            </div>
-            <p className="text-[11px] text-[#9a9aa3] font-mono">
-              Palavra {paraProgress.current} de {paraProgress.total} ({paraProgress.percent}%)
-            </p>
-          </div>
-        </div>
-
-        {/* Toolbar buttons */}
-        <div className="flex items-center gap-1 sm:gap-1.5">
-          {/* Font size adjustment */}
-          <button
-            type="button"
-            onClick={() => setFontSize(s => Math.max(13, s - 1))}
-            className="p-1.5 text-[#9a9aa3] hover:text-[#e8e8ec] hover:bg-[#2a2a32] rounded-[8px] border border-[#33333c] transition-colors cursor-pointer"
-            title="Diminuir tamanho do texto"
-          >
-            <ZoomOut className="w-3.5 h-3.5" />
-          </button>
-
-          <span className="text-[11px] font-mono text-[#9a9aa3] px-1 hidden sm:inline">
-            {fontSize}px
-          </span>
-
-          <button
-            type="button"
-            onClick={() => setFontSize(s => Math.min(26, s + 1))}
-            className="p-1.5 text-[#9a9aa3] hover:text-[#e8e8ec] hover:bg-[#2a2a32] rounded-[8px] border border-[#33333c] transition-colors cursor-pointer"
-            title="Aumentar tamanho do texto"
-          >
-            <ZoomIn className="w-3.5 h-3.5" />
-          </button>
-
-          {/* Context vs Full toggle */}
+      {/* Clean, Minimalist Toolbar Header - No heavy titles or icons */}
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#282830] bg-[#141417]/80 shrink-0">
+        {/* Subtle status dot and mode switch */}
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => setShowFullDocument(prev => !prev)}
             className={cn(
-              "px-2 py-1 text-[11px] font-semibold rounded-[8px] border transition-colors cursor-pointer ml-1 hidden xs:inline-flex items-center gap-1",
+              "px-2 py-1 text-[11px] font-mono rounded-[6px] border transition-colors cursor-pointer flex items-center gap-1.5",
               showFullDocument 
-                ? "bg-[#35325f] text-[#c5c5ef] border-[#504a8a]" 
-                : "text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] border-[#33333c]"
+                ? "bg-[#282832] text-[#e8e8ec] border-[#40404c]" 
+                : "text-[#8a8a95] hover:text-[#e8e8ec] bg-transparent border-transparent hover:bg-[#222228]"
             )}
-            title={showFullDocument ? "Mostrar parágrafos contextuais" : "Mostrar todo o texto"}
+            title={showFullDocument ? "Alternar para Parágrafos Contextuais" : "Alternar para Documento Completo"}
           >
-            {showFullDocument ? "Texto Completo" : "Contextual"}
+            {showFullDocument ? (
+              <>
+                <FileText className="w-3 h-3 text-[#FCFD76]" />
+                <span>Completo</span>
+              </>
+            ) : (
+              <>
+                <AlignLeft className="w-3 h-3 text-[#c5c5ef]" />
+                <span>Contexto</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Action Controls */}
+        <div className="flex items-center gap-1">
+          {/* Font Size Out */}
+          <button
+            type="button"
+            onClick={() => setFontSize(s => Math.max(13, s - 1))}
+            className="p-1 text-[#8a8a95] hover:text-[#e8e8ec] hover:bg-[#26262e] rounded-[6px] transition-colors cursor-pointer"
+            title="Diminuir texto"
+            aria-label="Diminuir texto"
+          >
+            <Minus className="w-3.5 h-3.5" />
           </button>
 
-          {/* Auto-scroll re-center button */}
+          <span className="text-[10px] font-mono text-[#7a7a85] px-0.5 select-none">
+            {fontSize}px
+          </span>
+
+          {/* Font Size In */}
+          <button
+            type="button"
+            onClick={() => setFontSize(s => Math.min(24, s + 1))}
+            className="p-1 text-[#8a8a95] hover:text-[#e8e8ec] hover:bg-[#26262e] rounded-[6px] transition-colors cursor-pointer"
+            title="Aumentar texto"
+            aria-label="Aumentar texto"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+
+          <div className="w-px h-3.5 bg-[#2c2c34] mx-0.5" />
+
+          {/* Auto-scroll re-center */}
           <button
             type="button"
             onClick={() => {
@@ -187,32 +163,34 @@ export default function ParagraphSplitView({
               activeWordElementRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }}
             className={cn(
-              "p-1.5 rounded-[8px] border transition-colors cursor-pointer",
+              "p-1 rounded-[6px] transition-colors cursor-pointer",
               autoScroll
-                ? "bg-[#28342b] text-[#5fa777] border-[#5fa777]/40"
-                : "text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] border-[#33333c]"
+                ? "text-[#5fa777] hover:bg-[#222a24]"
+                : "text-[#8a8a95] hover:text-[#e8e8ec] hover:bg-[#26262e]"
             )}
-            title="Centralizar automaticamente na palavra em leitura"
+            title="Centralizar na leitura atual"
+            aria-label="Centralizar na leitura atual"
           >
             <Compass className="w-3.5 h-3.5" />
           </button>
 
-          {/* Close button */}
+          {/* Close split */}
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-[#9a9aa3] hover:text-[#e8e8ec] hover:bg-[#2a2a32] rounded-[8px] border border-[#33333c] transition-colors cursor-pointer ml-1"
-            title="Fechar visão dividida"
+            className="p-1 text-[#8a8a95] hover:text-[#e8e8ec] hover:bg-[#26262e] rounded-[6px] transition-colors cursor-pointer ml-0.5"
+            title="Fechar split view (V)"
+            aria-label="Fechar split view"
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Paragraphs Scroll Container */}
+      {/* Paragraphs Text Container - Clean, focused on readability */}
       <div 
         ref={containerRef}
-        className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 select-text leading-relaxed transition-all"
+        className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 select-text leading-relaxed transition-all"
         style={{ fontSize: `${fontSize}px` }}
       >
         {visibleParagraphs.map((para) => {
@@ -223,35 +201,15 @@ export default function ParagraphSplitView({
             <div
               key={para.id}
               className={cn(
-                "p-3.5 sm:p-4 rounded-[16px] transition-all duration-300 relative border",
+                "p-3 rounded-[12px] transition-all duration-200 relative",
                 isCurrentPara 
-                  ? "bg-[#18181c] border-[#504a8a]/70 shadow-lg ring-1 ring-[#504a8a]/30" 
+                  ? "bg-[#1f1f26]/90 border-l-2 border-l-[#FCFD76] border-y border-r border-[#2d2d38]" 
                   : isPreviousPara
-                  ? "bg-[#141417]/60 border-[#282830] opacity-45 hover:opacity-80"
-                  : "bg-[#141417]/70 border-[#282830] opacity-55 hover:opacity-90"
+                  ? "opacity-50 hover:opacity-85"
+                  : "opacity-60 hover:opacity-90"
               )}
             >
-              {/* Paragraph Number Badge */}
-              <div className="flex items-center justify-between mb-2">
-                <span className={cn(
-                  "text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-[6px]",
-                  isCurrentPara 
-                    ? "bg-[#35325f] text-[#c5c5ef]" 
-                    : "bg-[#1e1e24] text-[#9a9aa3]"
-                )}>
-                  Parágrafo {para.id + 1}
-                </span>
-
-                {isCurrentPara && (
-                  <span className="text-[10px] text-[#FCFD76] font-mono font-bold flex items-center gap-1 animate-pulse">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#FCFD76]" />
-                    Leitura ativa
-                  </span>
-                )}
-              </div>
-
-              {/* Paragraph Text with Words */}
-              <p className="leading-relaxed font-sans text-[#c2c2c9]">
+              <p className="leading-relaxed font-sans text-[#d4d4dc]">
                 {para.words.map((word, wordOffset) => {
                   const absoluteWordIndex = para.startIndex + wordOffset;
                   const isActiveWord = absoluteWordIndex === currentWordIndex;
@@ -263,27 +221,23 @@ export default function ParagraphSplitView({
                       ref={isActiveWord ? activeWordElementRef : null}
                       onClick={() => onWordClick(absoluteWordIndex)}
                       className={cn(
-                        "inline-block rounded-[5px] px-1 py-0.5 mx-0.5 cursor-pointer transition-all duration-150 relative",
+                        "inline-block rounded-[4px] px-1 py-0.5 mx-0.5 cursor-pointer transition-all duration-100",
                         isActiveWord
                           ? cn(
-                              "font-bold scale-110 z-10",
+                              "font-bold scale-105 z-10",
                               highlightStyle.bg,
                               highlightStyle.text,
                               highlightStyle.ring,
                               highlightStyle.glow,
-                              "ring-2 ring-offset-1 ring-offset-[#18181c]"
+                              "ring-1 ring-offset-1 ring-offset-[#18181c]"
                             )
                           : isReadWord
-                          ? "text-[#8a8a95] opacity-75 hover:opacity-100 hover:text-[#e8e8ec] hover:bg-[#2a2a32]"
-                          : "hover:text-[#FCFD76] hover:bg-[#2a2a32] text-[#e8e8ec]"
+                          ? "text-[#82828e] opacity-80 hover:opacity-100 hover:text-[#e8e8ec] hover:bg-[#282832]"
+                          : "text-[#d8d8e0] hover:text-[#FCFD76] hover:bg-[#282832]"
                       )}
                       title={`Palavra ${(absoluteWordIndex + 1).toLocaleString()} • Clique para saltar`}
                     >
                       {word}
-                      {/* Active Indicator Arrow */}
-                      {isActiveWord && (
-                        <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-[#FCFD76] pointer-events-none animate-bounce" />
-                      )}
                     </span>
                   );
                 })}

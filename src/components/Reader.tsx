@@ -744,14 +744,14 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
             className={cn(
               "flex items-center gap-1.5 px-3 py-2 rounded-[11px] border transition-all cursor-pointer",
               showSplitView
-                ? "bg-[#35325f] text-[#c5c5ef] border-[#504a8a] shadow-[0_0_12px_rgba(80,74,138,0.3)]"
+                ? "bg-[#2a2a36] text-[#FCFD76] border-[#404050]"
                 : "text-[#9a9aa3] hover:text-[#e8e8ec] bg-[#222228] hover:bg-[#2a2a32] border-[#33333c]"
             )}
             title="Alternar Visão Dividida de Parágrafo (Atalho: V)"
           >
             <Columns2 className="w-4 h-4" />
             <span className="font-semibold text-xs sm:text-sm hidden sm:inline">
-              {showSplitView ? "Split Ativo" : "Split"}
+              Split
             </span>
           </button>
 
