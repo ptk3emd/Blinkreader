@@ -17,6 +17,7 @@ export type Theme = 'dark' | 'sepia' | 'solarized' | 'oled';
 
 export interface UserSettings {
   theme: Theme;
+  fontSize: number; // Percentage, e.g., 100 for normal, 120 for 120%
 }
 
 export interface WpmHistory {
@@ -76,7 +77,7 @@ export const storage = {
 
   async getSettings(): Promise<UserSettings> {
     const settings = await db.getItem<UserSettings>('user_settings');
-    return settings || { theme: 'dark' };
+    return settings || { theme: 'dark', fontSize: 100 };
   },
 
   async updateSettings(settings: Partial<UserSettings>): Promise<void> {

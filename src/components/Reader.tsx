@@ -40,6 +40,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
   const [navPreviewIndex, setNavPreviewIndex] = useState(0);
   const [toc, setToc] = useState<{label: string, index: number}[]>([]);
   const [theme, setTheme] = useState<Theme>('dark');
+  const [fontSize, setFontSize] = useState<number>(100);
   
   const timerRef = useRef<number | null>(null);
   const currentWordIndexRef = useRef(0);
@@ -62,6 +63,9 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
 
       const userSettings = await storage.getSettings();
       setTheme(userSettings.theme);
+      if (userSettings.fontSize) {
+        setFontSize(userSettings.fontSize);
+      }
 
       setLoading(false);
     };
@@ -191,6 +195,11 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
     storage.updateSettings({ theme: newTheme });
   };
 
+  const updateFontSize = (newSize: number) => {
+    setFontSize(newSize);
+    storage.updateSettings({ fontSize: newSize });
+  };
+
   const openSettings = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsPlaying(false);
@@ -290,7 +299,10 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
         </div>
 
         {/* Word Display */}
-        <div className="flex items-baseline font-mono text-[8vw] md:text-7xl lg:text-8xl w-full">
+        <div 
+          className="flex items-baseline font-mono text-[8vw] md:text-7xl lg:text-8xl w-full transition-transform duration-200 origin-center"
+          style={{ transform: `scale(${fontSize / 100})` }}
+        >
           {/* Prefix (right-aligned) */}
           <div className="flex-1 text-right opacity-80">
             {formattedWord.prefix}
@@ -489,7 +501,7 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
             
             <div className="p-6">
               <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Reading Theme</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 mb-8">
                 <button
                   onClick={() => updateTheme('dark')}
                   className={cn(
@@ -541,6 +553,24 @@ export default function Reader({ documentId, onBack }: ReaderProps) {
                   </div>
                   <span className="text-zinc-100 font-medium">OLED Black</span>
                 </button>
+              </div>
+
+              <h3 className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-4">Text Size</h3>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+                <div className="flex items-center justify-between text-zinc-400 mb-4">
+                  <span className="text-sm">Smaller</span>
+                  <span className="font-mono text-amber-500 font-bold">{fontSize}%</span>
+                  <span className="text-lg font-bold">Larger</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="50" 
+                  max="150" 
+                  step="5"
+                  value={fontSize}
+                  onChange={(e) => updateFontSize(Number(e.target.value))}
+                  className="w-full accent-amber-500 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
+                />
               </div>
             </div>
           </div>
